@@ -1,0 +1,55 @@
+# ============================================================
+# Enterprise RAG System — Git Ignore
+# ============================================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+
+# --- Virtual Environment ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Environment Variables (SECRETS) ---
+.env
+
+# --- Project Data ---
+data/
+chroma_db/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Testing ---
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Docker ---
+docker-compose.override.yml
+
+# --- Misc ---
+*.bak
+*.tmp

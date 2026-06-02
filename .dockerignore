@@ -1,0 +1,37 @@
+# Virtual environments
+venv/
+.venv/
+env/
+.env_test
+
+# Python caching & build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Local databases and uploads (handled by Docker volumes)
+chroma_db/
+test_chroma_db/
+test_phase4_db/
+test_phase5_db/
+test_phase6_db/
+data/
+test_phase6_data/
+logs/
+
+# Git
+.git/
+.github/
+.gitignore
+
+# Docker config
+Dockerfile
+docker-compose.yml
+.dockerignore

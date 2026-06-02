@@ -1,0 +1,41 @@
+# ============================================================
+# Enterprise RAG System — Dependencies
+# ============================================================
+
+# --- LLM Framework ---
+langchain>=0.3.0,<0.4.0
+langchain-community>=0.3.0,<0.4.0
+langchain-google-genai>=2.0.0,<3.0.0
+langchain-chroma>=0.2.0
+
+# --- Vector Database ---
+chromadb>=1.0.0
+
+# --- Embeddings (Local, Free) ---
+sentence-transformers>=3.0.0,<4.0.0
+
+# --- PDF Parsing ---
+pypdf>=4.0.0,<5.0.0
+
+# --- API Server ---
+fastapi>=0.115.0,<1.0.0
+uvicorn[standard]>=0.30.0,<1.0.0
+python-multipart>=0.0.9
+
+# --- Frontend ---
+streamlit>=1.38.0,<2.0.0
+
+# --- HTTP Client (Streamlit -> FastAPI) ---
+httpx>=0.27.0,<1.0.0
+
+# --- Configuration ---
+pydantic>=2.0.0,<3.0.0
+pydantic-settings>=2.0.0,<3.0.0
+python-dotenv>=1.0.0,<2.0.0
+
+# --- Testing ---
+pytest>=8.0.0,<9.0.0
+pytest-asyncio>=0.23.0,<1.0.0
+
+# --- Logging ---
+loguru>=0.7.0,<1.0.0
