@@ -40,22 +40,25 @@ class ChromaStoreService:
             self.vector_store = Chroma(
                 collection_name=self.collection_name,
                 embedding_function=self.embeddings,
-                persist_directory=self.persist_dir
+                persist_directory=self.persist_dir,
+                collection_metadata={"hnsw:space": "cosine"}
             )
             logger.info("Successfully connected to ChromaDB.")
         except Exception as e:
             logger.error(f"Failed to initialize ChromaDB: {str(e)}")
             raise
 
-    def add_documents(self, documents: List[Document]) -> List[str]:
+    def add_documents(self, documents: List[Document], batch_size: int = 200) -> List[str]:
         """
         Add chunked documents to the vector store.
         
         This will compute the embeddings for each chunk and persist them along 
-        with the text and metadata.
+        with the text and metadata. To prevent high memory peaks and potential
+        OOM crashes on large files, documents are indexed in batches.
 
         Args:
             documents: List of Document chunks to store.
+            batch_size: The number of documents to embed and insert per batch.
 
         Returns:
             List of string IDs representing the inserted documents.
@@ -64,11 +67,22 @@ class ChromaStoreService:
             logger.warning("No documents provided to add to vector store.")
             return []
 
-        logger.info(f"Adding {len(documents)} document chunks to vector store...")
+        total_docs = len(documents)
+        logger.info(f"Adding {total_docs} document chunks to vector store in batches of {batch_size}...")
+        
+        all_ids = []
         try:
-            ids = self.vector_store.add_documents(documents)
-            logger.info(f"Successfully added {len(ids)} document chunks.")
-            return ids
+            for i in range(0, total_docs, batch_size):
+                batch = documents[i : i + batch_size]
+                batch_num = (i // batch_size) + 1
+                total_batches = (total_docs + batch_size - 1) // batch_size
+                
+                logger.info(f"Indexing batch {batch_num}/{total_batches} ({len(batch)} chunks)...")
+                batch_ids = self.vector_store.add_documents(batch)
+                all_ids.extend(batch_ids)
+                
+            logger.info(f"Successfully added all {len(all_ids)} document chunks to vector store.")
+            return all_ids
         except Exception as e:
             logger.error(f"Error adding documents to ChromaDB: {str(e)}")
             raise

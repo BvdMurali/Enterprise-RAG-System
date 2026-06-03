@@ -57,5 +57,5 @@ class PDFLoaderService:
             return documents
             
         except Exception as e:
-            logger.error(f"Error extracting text from PDF {path}: {str(e)}")
+            logger.error(f"Error extracting text from PDF {path}: {repr(e)}", exc_info=True)
             raise

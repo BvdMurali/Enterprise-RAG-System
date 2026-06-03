@@ -1,6 +1,31 @@
-# Enterprise Retrieval-Augmented Generation (RAG) System
+<div align="center">
+  <img src="assets/rag_dashboard.png" alt="Enterprise RAG Dashboard" width="800"/>
+</div>
 
-A production-quality Enterprise RAG System built from scratch using only free and open-source tools. Users can upload multiple PDF documents, manage them in a vector database index, and ask natural language questions. The system retrieves relevant chunks using semantic search and generates accurate answers grounded exclusively in the uploaded documents, returning inline source citations and match percentages.
+# 🚀 Enterprise Retrieval-Augmented Generation (RAG) System
+
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=flat&logo=Streamlit&logoColor=white)](https://streamlit.io/)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-Vector_Store-orange)](https://www.trychroma.com/)
+[![LangChain](https://img.shields.io/badge/LangChain-Integration-green)](https://python.langchain.com/)
+
+A production-quality Enterprise RAG System built entirely from scratch using free and open-source tools. Upload PDFs, seamlessly index them in a local vector database, and chat with your documents using Google's Gemini LLM. The system enforces strict grounding, returning accurate answers backed by inline document citations and match percentages.
+
+---
+
+## ✨ Key Features
+
+- **Semantic Search & Vector Indexing:** Fast, local semantic search using HuggingFace `sentence-transformers` and ChromaDB.
+- **Strict Grounding:** The Gemini LLM is engineered to refuse answering questions that cannot be found in the uploaded context, ensuring zero hallucinations.
+- **Inline Citations:** AI responses explicitly cite the source document name, page number, and provide a snippet of the retrieved text with a percentage match score.
+- **Persistent Chat History:** Seamlessly switch between named, archived conversations. The app saves your progress completely locally.
+- **Query Editing:** Made a typo? Click the "Edit Query" button to seamlessly replace your message and generate a fresh answer.
+- **Premium Glassmorphic UI:** A beautifully designed frontend built with customized Streamlit CSS, featuring floating cards and vibrant gradients.
+
+<div align="center">
+  <img src="assets/doc_manager.png" alt="Document Manager" width="400"/>
+</div>
 
 ---
 
@@ -10,7 +35,7 @@ A production-quality Enterprise RAG System built from scratch using only free an
 graph TB
     subgraph Frontend
         ST["Streamlit UI"]
-    </style>
+    end
     subgraph Backend
         FA["FastAPI Server"]
         subgraph Services
@@ -42,49 +67,46 @@ graph TB
 ## ⚡ Tech Stack
 
 *   **Core Logic:** Python 3.11+
-*   **LLM Orchestrator:** LangChain (LangChain Express Language for clean pipeline chaining)
-*   **Vector Database:** ChromaDB (local persistence, zero-infra setup)
+*   **LLM Orchestrator:** LangChain Express Language (LCEL)
+*   **Vector Database:** ChromaDB (local persistence)
 *   **Local Embeddings:** Sentence Transformers (`all-MiniLM-L6-v2`, 384 dimensions)
-*   **Generative AI Model:** Google Gemini 2.0 Flash (generous free-tier API)
-*   **API Framework:** FastAPI (async execution, type safety, OpenAPI auto-docs)
-*   **Frontend Interface:** Streamlit (customized glassmorphism design, sidebar file uploader, interactive chat)
-*   **PDF Extractor:** PyPDF (native python parser, zero external C-dependencies)
-*   **Deployment:** Docker & Docker Compose (multi-stage minimal build size)
+*   **Generative AI:** Google Gemini 3.1 Flash Lite
+*   **API Framework:** FastAPI
+*   **Frontend Interface:** Streamlit 
+*   **Deployment:** Docker & Docker Compose
 
 ---
 
 ## 🚀 Getting Started
 
 ### 📋 Prerequisites
-*   Python 3.11 or higher installed.
-*   A Google Gemini API key (Free tier). You can obtain one from [Google AI Studio](https://aistudio.google.com/apikey).
+*   Python 3.11+
+*   A Google Gemini API key (Free tier). Get one from [Google AI Studio](https://aistudio.google.com/apikey).
 
-### 🔧 Local Installation & Setup
+### 🔧 Local Installation
 
-1.  **Clone or Navigate to the Directory:**
+1.  **Clone the Repository:**
     ```bash
-    cd "Enterprise RAG System"
+    git clone https://github.com/yourusername/enterprise-rag.git
+    cd enterprise-rag
     ```
 
 2.  **Create and Activate a Virtual Environment:**
     ```bash
     python -m venv venv
-    
-    # On Windows:
+    # Windows:
     .\venv\Scripts\activate
-    
-    # On Linux/macOS:
+    # Linux/macOS:
     source venv/bin/activate
     ```
 
-3.  **Install Required Dependencies:**
+3.  **Install Dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
 4.  **Configure Environment Variables:**
-    *   Rename the `.env` template (or edit the existing `.env`) in the root directory.
-    *   Insert your Google Gemini API Key:
+    Rename the `.env` template or create a new one in the root directory:
     ```ini
     GOOGLE_API_KEY=AIzaSyYourGeminiApiKeyHere...
     ```
@@ -93,64 +115,34 @@ graph TB
     ```bash
     uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     ```
-    *   Swagger documentation is automatically available at: [http://localhost:8000/docs](http://localhost:8000/docs)
+    *API Docs are available at: [http://localhost:8000/docs](http://localhost:8000/docs)*
 
-6.  **Run the Streamlit Web UI Application:**
-    *   Open a new terminal window, activate the virtual environment, and run:
+6.  **Run the Streamlit Web UI:**
+    Open a *new* terminal window, activate the virtual environment, and run:
     ```bash
     streamlit run frontend/streamlit_app.py
     ```
-    *   Open your browser at: [http://localhost:8501](http://localhost:8501)
+    *Open your browser at: [http://localhost:8501](http://localhost:8501)*
 
 ---
 
 ## 🐳 Running with Docker
 
-Run both the frontend and backend microservices using docker-compose. Volumes are used to ensure uploaded PDFs and the ChromaDB vector indexes are persisted on the host machine.
+Run the entire stack instantly using docker-compose. Volumes are pre-configured to ensure your uploaded PDFs and vector indexes persist on your local machine.
 
-1.  **Build and Start Containers:**
-    ```bash
-    docker-compose up --build -d
-    ```
-
-2.  **Verify Contain Health:**
-    *   FastAPI backend will run at [http://localhost:8000](http://localhost:8000)
-    *   Streamlit UI will run at [http://localhost:8501](http://localhost:8501)
-
-3.  **Shutdown and Remove Volumes (optional):**
-    ```bash
-    docker-compose down -v
-    ```
-
----
-
-## 🧪 Running Automated Tests
-
-A suite of unit and integration tests is located under the `tests/` directory to verify document parsing, chunking, database insertion, and API controllers.
-
-Run tests locally with pytest:
 ```bash
-pytest tests/ -v
+# Build and start the services in detached mode
+docker-compose up --build -d
+
+# Check the logs
+docker-compose logs -f
 ```
 
 ---
 
-## 🛠️ Windows Memory & VM Optimization (Troubleshooting)
+## 🧪 Testing
 
-Windows environments with strict RAM limits or paging restrictions may trigger Out-Of-Memory (OOM) or loading crashes (`os error 1455` or thread pool failures). The following optimizations have been pre-applied in the codebase configurations to ensure reliability:
-
-1.  **PyTorch Safetensors Paging Issue:**
-    *   Loading sentence-transformers with default `.safetensors` can fail on constrained paging files. We bypass this by forcing standard PyTorch binary weights mapping in `backend/services/embeddings.py`:
-        ```python
-        model_kwargs = {'device': 'cpu', 'model_kwargs': {'use_safetensors': False}}
-        ```
-
-2.  **OpenBLAS Thread Allocations:**
-    *   Multi-threading in linear algebra modules can trigger allocation crashes. We force single-thread bindings in `backend/config.py`:
-        ```python
-        os.environ["OPENBLAS_NUM_THREADS"] = "1"
-        os.environ["OMP_NUM_THREADS"] = "1"
-        ```
-
-3.  **ChromaDB File Locking:**
-    *   Windows filesystem locks files in use. Clean up operations in `verify_*.py` are designed to retry or bypass locked sqlite resource errors.
+A suite of unit and integration tests is located under the `tests/` directory to verify document parsing, chunking, database insertion, and API controllers.
+```bash
+pytest tests/ -v
+```

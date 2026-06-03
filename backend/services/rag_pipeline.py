@@ -9,6 +9,7 @@ This module orchestrates the full RAG pipeline:
 5. Returns a structured response containing the answer and source documents.
 """
 
+from pathlib import Path
 from typing import Dict, Any, List, Optional
 from langchain_core.messages import SystemMessage, HumanMessage
 
@@ -54,15 +55,23 @@ class RAGPipelineService:
             # 1. Retrieve the relevant document chunks
             retrieved_docs = self.retriever.retrieve(question, filter_dict)
             
-            # If no docs are found, return a fallback early
-            if not retrieved_docs:
-                return {
-                    "answer": "No relevant documents found in the database. Please upload documents first.",
-                    "sources": []
-                }
-
             # 2. Format the context for the system prompt
-            formatted_context = self.retriever.retrieve_formatted_context(question, filter_dict)
+            if not retrieved_docs:
+                formatted_context = "No relevant document context was found in the uploaded database."
+            else:
+                formatted_context = self.retriever.retrieve_formatted_context(question, filter_dict)
+
+            # Inject metadata listing currently uploaded files so LLM can answer document list queries
+            try:
+                collection_data = self.retriever.chroma_store.vector_store.get()
+                metadatas = collection_data.get("metadatas", [])
+                unique_files = sorted(list(set(Path(meta["source"]).name for meta in metadatas if meta and "source" in meta)))
+            except Exception as e:
+                logger.error(f"Failed to query database document list: {e}")
+                unique_files = []
+
+            files_list_str = ", ".join(unique_files) if unique_files else "None"
+            formatted_context += f"\n\n[System Info] Currently indexed PDF documents in database: {files_list_str}"
 
             # 3. Format prompt and invoke LLM
             # Since get_rag_prompt returns ChatPromptTemplate, we format it with context and question

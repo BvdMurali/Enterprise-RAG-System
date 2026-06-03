@@ -47,3 +47,17 @@ class DocumentInfo(BaseModel):
     """Schema representing metadata about a document in the vector store."""
     filename: str = Field(..., description="The name of the PDF file.")
     chunk_count: int = Field(..., description="Number of chunks associated with this file.")
+
+
+class ChatMessage(BaseModel):
+    """Schema for a single chat message in the conversation history."""
+    role: str = Field(..., description="Role of the sender: 'user' or 'assistant'.")
+    content: str = Field(..., description="The text content of the message.")
+    sources: Optional[List[dict]] = Field(None, description="Optional list of source chunks if role is assistant.")
+
+
+class ConversationState(BaseModel):
+    """Schema for the complete state of the user's conversations."""
+    current_chat_title: str = Field("Active Conversation", description="Title of the currently active conversation.")
+    chat_history: List[ChatMessage] = Field(default_factory=list, description="Messages in the currently active conversation.")
+    past_conversations: dict = Field(default_factory=dict, description="Dictionary mapping past conversation titles to their message lists.")

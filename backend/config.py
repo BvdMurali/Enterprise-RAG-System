@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     google_api_key: str = "your-gemini-api-key-here"
 
     # --- LLM Configuration ---
-    llm_model_name: str = "gemini-2.0-flash"
+    llm_model_name: str = "gemini-2.5-flash"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 2048
 
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # --- Retriever Configuration ---
     retrieval_top_k: int = 5
-    retrieval_score_threshold: float = 0.3
+    retrieval_score_threshold: float = 0.15
 
     # --- ChromaDB Configuration ---
     chroma_persist_dir: str = "./chroma_db"

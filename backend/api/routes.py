@@ -6,6 +6,7 @@ and document collection management.
 """
 
 import os
+import json
 from pathlib import Path
 from typing import List
 from collections import Counter
@@ -20,7 +21,8 @@ from backend.api.schemas import (
     AnswerResponse, 
     UploadResponse, 
     DocumentInfo,
-    SourceCitation
+    SourceCitation,
+    ConversationState
 )
 from backend.loaders.pdf_loader import PDFLoaderService
 from backend.services.chunking import ChunkingService
@@ -42,18 +44,21 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
     """
     settings = get_settings()
     
+    # Extract clean basename to prevent directory traversal or absolute path issues
+    filename = Path(file.filename).name
+    
     # 1. Validate file extension
-    if not file.filename.lower().endswith(".pdf"):
+    if not filename.lower().endswith(".pdf"):
         raise HTTPException(
             status_code=400, 
-            detail=f"Only PDF files are supported. Got '{file.filename}'"
+            detail=f"Only PDF files are supported. Got '{filename}'"
         )
         
-    logger.info(f"Received upload request for file: {file.filename}")
+    logger.info(f"Received upload request for file: {filename}")
     
     # Create upload path if not exists
     upload_dir = settings.upload_path
-    temp_file_path = upload_dir / file.filename
+    temp_file_path = upload_dir / filename
 
     try:
         # 2. Write file to disk
@@ -75,7 +80,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         if not chunks:
             raise HTTPException(
                 status_code=400,
-                detail=f"Could not extract any text chunks from PDF: {file.filename}"
+                detail=f"Could not extract any text chunks from PDF: {filename}"
             )
 
         # 5. Store in vector database
@@ -84,16 +89,16 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         # This will automatically call the embedding service and persist vectors.
         chroma_service.add_documents(chunks)
         
-        logger.info(f"Successfully processed and indexed {file.filename}")
+        logger.info(f"Successfully processed and indexed {filename}")
         
         return UploadResponse(
             status="success",
-            filename=file.filename,
+            filename=filename,
             chunks_count=len(chunks)
         )
 
     except Exception as e:
-        logger.error(f"Error handling upload for file {file.filename}: {str(e)}", exc_info=True)
+        logger.exception(f"Error handling upload for file {filename}")
         # Attempt to cleanup file on failure
         if temp_file_path.exists():
             try:
@@ -229,4 +234,44 @@ async def delete_document(request: Request, filename: str):
         raise HTTPException(
             status_code=500,
             detail=f"Failed to complete document deletion: {str(e)}"
+        )
+
+
+@router.get("/conversations", response_model=ConversationState, tags=["Conversations"])
+async def get_conversations():
+    """Retrieve saved conversation state from disk."""
+    settings = get_settings()
+    file_path = settings.upload_path / "conversations.json"
+    
+    if not file_path.exists():
+        return ConversationState()
+        
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return ConversationState(**data)
+    except Exception as e:
+        logger.error(f"Failed to load conversation history: {str(e)}")
+        # Return empty state if file is corrupt
+        return ConversationState()
+
+
+@router.post("/conversations", tags=["Conversations"])
+async def save_conversations(state: ConversationState):
+    """Save conversation state to disk."""
+    settings = get_settings()
+    file_path = settings.upload_path / "conversations.json"
+    
+    # Ensure upload path exists
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(state.model_dump(), f, ensure_ascii=False, indent=2)
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Failed to save conversation history: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save conversations: {str(e)}"
         )
