@@ -63,5 +63,6 @@ def test_formatted_context(shared_db):
     
     context = retriever_service.retrieve_formatted_context("ChromaDB vector database")
     
-    assert "[Source: database.pdf, Page: 1]" in context
+    assert "Source=database.pdf" in context
+    assert "Page=1" in context
     assert "ChromaDB is a database" in context

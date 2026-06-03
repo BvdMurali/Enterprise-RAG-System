@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 2048
 
     # --- Embedding Configuration ---
-    embedding_model_name: str = "all-MiniLM-L6-v2"
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
 
     # --- Chunking Configuration ---
     chunk_size: int = 1000
@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     # --- ChromaDB Configuration ---
     chroma_persist_dir: str = "./chroma_db"
     chroma_collection_name: str = "enterprise_rag"
+
+    # --- Advanced RAG Settings ---
+    parent_store_dir: str = "./parent_store"
+    reranker_model_name: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    semantic_cache_db: str = "./semantic_cache.db"
+    semantic_cache_threshold: float = 0.08
+    jwt_secret: str = "your-local-jwt-secret-key"
+    jwt_algorithm: str = "HS256"
 
     # --- Upload Configuration ---
     upload_dir: str = "./data"
@@ -78,6 +86,13 @@ class Settings(BaseSettings):
     def chroma_path(self) -> Path:
         """Resolved ChromaDB persistence directory path."""
         path = Path(self.chroma_persist_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    @property
+    def parent_store_path(self) -> Path:
+        """Resolved Parent Document Store directory path."""
+        path = Path(self.parent_store_dir)
         path.mkdir(parents=True, exist_ok=True)
         return path
 

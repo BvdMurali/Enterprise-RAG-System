@@ -42,8 +42,8 @@ RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.t
 RUN groupadd -g 10001 appgroup && \
     useradd -u 10000 -g appgroup -m -s /bin/bash appuser
 
-# Create upload and database directories with correct ownership
-RUN mkdir -p /app/data /app/chroma_db /app/logs && \
+# Create upload, parent store, and database directories with correct ownership
+RUN mkdir -p /app/data /app/chroma_db /app/parent_store /app/logs && \
     chown -R appuser:appgroup /app
 
 # Copy application source code
@@ -61,7 +61,9 @@ ENV PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=1 \
     HF_HUB_DISABLE_SYMLINKS_WARNING=1 \
     CHROMA_PERSIST_DIR=/app/chroma_db \
-    UPLOAD_DIR=/app/data
+    UPLOAD_DIR=/app/data \
+    PARENT_STORE_DIR=/app/parent_store \
+    SEMANTIC_CACHE_DB=/app/data/semantic_cache.db
 
 # Expose backend (8000) and frontend (8501) ports
 EXPOSE 8000

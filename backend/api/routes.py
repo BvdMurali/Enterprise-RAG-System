@@ -11,8 +11,12 @@ from pathlib import Path
 from typing import List
 from collections import Counter
 
-from fastapi import APIRouter, File, UploadFile, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, File, UploadFile, HTTPException, Request, BackgroundTasks, Depends, Query, status
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
+from datetime import timedelta
+from typing import Optional
 
 from backend.config import get_settings
 from backend.logger import logger
@@ -26,8 +30,42 @@ from backend.api.schemas import (
 )
 from backend.loaders.pdf_loader import PDFLoaderService
 from backend.services.chunking import ChunkingService
+from backend.services.auth import verify_token, USERS_DB, create_access_token
 
 router = APIRouter(prefix="/api")
+
+
+# --- Standalone Security and Token Schemas ---
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user_groups: List[str]
+
+
+security_bearer = HTTPBearer(auto_error=False)
+
+
+def get_current_user_groups(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer)) -> List[str]:
+    """
+    FastAPI dependency to verify JWT token and extract role scope groups.
+    Defaults to ["public"] if no bearer token is present (backward compatibility with baseline app).
+    """
+    if not credentials:
+        return ["public"]
+    
+    payload = verify_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload.user_groups
 
 
 @router.get("/health", tags=["System"])
@@ -36,11 +74,36 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@router.post("/auth/login", response_model=TokenResponse, tags=["Authentication"])
+async def login(body: LoginRequest):
+    """
+    Authenticate standalone users against local USERS_DB and return a JWT access token.
+    """
+    user = USERS_DB.get(body.username)
+    if not user or user["password_hash"] != body.password:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = create_access_token(body.username)
+    return TokenResponse(
+        access_token=token,
+        user_groups=user["user_groups"]
+    )
+
+
 @router.post("/upload", response_model=UploadResponse, tags=["Documents"])
-async def upload_pdf(request: Request, file: UploadFile = File(...)):
+async def upload_pdf(
+    request: Request, 
+    file: UploadFile = File(...),
+    access_group: str = Query("public", description="The role access group required to search this document")
+):
     """
     Upload a PDF document, extract its text, chunk it, embed the chunks,
     and persist them in the ChromaDB vector database.
+    Supports assigning access control roles for multi-tenant isolation.
     """
     settings = get_settings()
     
@@ -54,7 +117,7 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
             detail=f"Only PDF files are supported. Got '{filename}'"
         )
         
-    logger.info(f"Received upload request for file: {filename}")
+    logger.info(f"Received upload request for file: {filename} with access_group: {access_group}")
     
     # Create upload path if not exists
     upload_dir = settings.upload_path
@@ -73,28 +136,26 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
         loader = PDFLoaderService()
         documents = loader.load_pdf(temp_file_path)
         
-        # 4. Chunk PDF content
-        chunker = ChunkingService()
-        chunks = chunker.chunk_documents(documents)
-        
-        if not chunks:
+        if not documents:
             raise HTTPException(
                 status_code=400,
-                detail=f"Could not extract any text chunks from PDF: {filename}"
+                detail=f"Could not extract any text pages from PDF: {filename}"
             )
 
-        # 5. Store in vector database
-        chroma_service = request.app.state.chroma_service
-        # Add the documents to the vector store.
-        # This will automatically call the embedding service and persist vectors.
-        chroma_service.add_documents(chunks)
+        # Tag each document page with its access control group
+        for doc in documents:
+            doc.metadata["access_group"] = access_group
+
+        # 4. Ingest via advanced retriever (handles parent-child splits)
+        retriever_service = request.app.state.retriever_service
+        child_chunks_count = retriever_service.add_documents(documents)
         
-        logger.info(f"Successfully processed and indexed {filename}")
+        logger.info(f"Successfully processed and indexed {filename} into {child_chunks_count} child chunks.")
         
         return UploadResponse(
             status="success",
             filename=filename,
-            chunks_count=len(chunks)
+            chunks_count=child_chunks_count
         )
 
     except Exception as e:
@@ -112,24 +173,237 @@ async def upload_pdf(request: Request, file: UploadFile = File(...)):
 
 
 @router.post("/ask", response_model=AnswerResponse, tags=["RAG"])
-async def ask_question(request: Request, body: QuestionRequest):
+async def ask_question(
+    request: Request, 
+    body: QuestionRequest,
+    user_groups: List[str] = Depends(get_current_user_groups)
+):
     """
     Submit a natural language question. Retrieves relevant context from the
     vector store and uses Google Gemini to generate a grounded response.
+    Supports conversational memory history and standalone JWT-based access control.
     """
-    logger.info(f"Received question: '{body.question}'")
+    logger.info(f"Received question: '{body.question}' for user_groups: {user_groups}")
     
     pipeline = request.app.state.rag_pipeline
+    cache_service = request.app.state.semantic_cache
     
-    # Construct filter dictionary if document filter is specified
-    filter_dict = None
+    # 1. Check Semantic Cache
+    cached_res = cache_service.get(body.question)
+    if cached_res:
+        cached_resp_text = cached_res["answer"]
+        try:
+            payload = json.loads(cached_resp_text)
+            answer = payload.get("answer", "")
+            summary = payload.get("summary", "")
+            confidence = payload.get("confidence", 0.85)
+            followups = payload.get("follow_up_questions", [])
+            doc_type = payload.get("document_type", "Unknown")
+            resp_type = payload.get("response_type", "general")
+        except Exception:
+            answer = cached_resp_text
+            summary = answer[:100] + "..." if len(answer) > 100 else answer
+            confidence = 0.85
+            followups = []
+            doc_type = "Unknown"
+            resp_type = "general"
+
+        citations = [
+            SourceCitation(
+                source=src["source"],
+                page=src["page"],
+                relevance_score=src["relevance_score"],
+                content=src["content"]
+            ) for src in cached_res.get("sources", [])
+        ]
+        return AnswerResponse(
+            answer=answer,
+            summary=summary,
+            confidence=confidence,
+            citations=citations,
+            follow_up_questions=followups,
+            document_type=doc_type,
+            response_type=resp_type
+        )
+    
+    # 2. Construct Metadata Access Control List (ACL) Filter
+    acl_filter = {"access_group": {"$in": user_groups}}
+    
     if body.filter_document:
-        filter_dict = {"source": body.filter_document}
-        logger.info(f"Filtering RAG context to document: '{body.filter_document}'")
+        filter_dict = {
+            "$and": [
+                {"source": body.filter_document},
+                acl_filter
+            ]
+        }
+    else:
+        filter_dict = acl_filter
         
-    result = pipeline.ask(body.question, filter_dict=filter_dict)
+    result = pipeline.ask(body.question, chat_history=body.chat_history, filter_dict=filter_dict)
     
     # Map raw dictionary sources to SourceCitation Pydantic objects
+    citations = []
+    for src in result.get("sources", []):
+        citations.append(
+            SourceCitation(
+                source=src["source"],
+                page=src["page"],
+                relevance_score=src["relevance_score"],
+                content=src["content"]
+            )
+        )
+        
+    # Store serialized result dictionary in Semantic Cache
+    cache_payload = {
+        "answer": result.get("answer", ""),
+        "summary": result.get("summary", ""),
+        "confidence": result.get("confidence", 0.85),
+        "follow_up_questions": result.get("followups", []),
+        "document_type": result.get("document_type", "Unknown"),
+        "response_type": result.get("response_type", "general"),
+        "sources": result.get("sources", [])
+    }
+    cache_service.set(body.question, json.dumps(cache_payload), result.get("sources", []))
+        
+    return AnswerResponse(
+        answer=result.get("answer", "No answer generated."),
+        summary=result.get("summary", ""),
+        confidence=result.get("confidence", 0.85),
+        citations=citations,
+        follow_up_questions=result.get("followups", []),
+        document_type=result.get("document_type", "Unknown"),
+        response_type=result.get("response_type", "general")
+    )
+
+
+@router.post("/ask/stream", tags=["RAG"])
+async def ask_question_stream(
+    request: Request, 
+    body: QuestionRequest,
+    user_groups: List[str] = Depends(get_current_user_groups)
+):
+    """
+    Submit a natural language question and stream the response chunk-by-chunk
+    using Server-Sent Events (SSE). Supports semantic caching and JWT access control.
+    """
+    logger.info(f"Received streaming question: '{body.question}' for user_groups: {user_groups}")
+    
+    pipeline = request.app.state.rag_pipeline
+    cache_service = request.app.state.semantic_cache
+    
+    # Construct Metadata Access Control List (ACL) Filter
+    acl_filter = {"access_group": {"$in": user_groups}}
+    
+    if body.filter_document:
+        filter_dict = {
+            "$and": [
+                {"source": body.filter_document},
+                acl_filter
+            ]
+        }
+    else:
+        filter_dict = acl_filter
+        
+    from fastapi.responses import StreamingResponse
+    import json
+    import asyncio
+    
+    async def event_generator():
+        # Check Semantic Cache first
+        cached_res = cache_service.get(body.question)
+        if cached_res:
+            logger.info("Streaming response from Semantic Cache...")
+            cached_resp_text = cached_res["answer"]
+            try:
+                payload = json.loads(cached_resp_text)
+                answer = payload.get("answer", "")
+                summary = payload.get("summary", "")
+                confidence = payload.get("confidence", 0.85)
+                followups = payload.get("follow_up_questions", [])
+                doc_type = payload.get("document_type", "Unknown")
+                resp_type = payload.get("response_type", "general")
+            except Exception:
+                answer = cached_resp_text
+                summary = answer[:100] + "..." if len(answer) > 100 else answer
+                confidence = 0.85
+                followups = []
+                doc_type = "Unknown"
+                resp_type = "general"
+
+            # Yield intent metadata first so UI can adapt immediately
+            yield f"data: {json.dumps({'metadata': {'intent': resp_type}})}\n\n"
+            await asyncio.sleep(0.005)
+
+            # Yield sources
+            yield f"data: {json.dumps({'sources': cached_res['sources']})}\n\n"
+            await asyncio.sleep(0.01)
+
+            # Yield token chunks to simulate streaming UI rendering
+            chunk_size = 5
+            for i in range(0, len(answer), chunk_size):
+                token_chunk = answer[i:i+chunk_size]
+                yield f"data: {json.dumps({'token': token_chunk})}\n\n"
+                await asyncio.sleep(0.005)
+
+            # Yield final parsed dict
+            yield f"data: {json.dumps({'parsed': {'summary': summary, 'confidence': confidence, 'document_type': doc_type, 'response_type': resp_type, 'followups': followups, 'sources_text': ''}})}\n\n"
+            return
+
+        # Cache miss - Stream from RAG and collect for caching
+        collected_tokens = []
+        collected_sources = []
+        try:
+            async for chunk in pipeline.ask_async_stream(
+                question=body.question,
+                chat_history=body.chat_history,
+                filter_dict=filter_dict
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+                
+                # Aggregate response content
+                if "token" in chunk:
+                    collected_tokens.append(chunk["token"])
+                elif "sources" in chunk:
+                    collected_sources = chunk["sources"]
+                    
+            full_answer = "".join(collected_tokens)
+            # Cache the response if it concluded successfully
+            if full_answer and not full_answer.startswith("\n[Error"):
+                from backend.services.rag_pipeline import parse_structured_response
+                parsed = parse_structured_response(full_answer)
+                cache_payload = {
+                    "answer": parsed["answer"],
+                    "summary": parsed["summary"],
+                    "confidence": parsed["confidence"],
+                    "follow_up_questions": parsed["followups"],
+                    "document_type": parsed["document_type"],
+                    "response_type": parsed["response_type"],
+                    "sources": collected_sources
+                }
+                cache_service.set(body.question, json.dumps(cache_payload), collected_sources)
+                
+        except Exception as e:
+            logger.error(f"Error in ask_question_stream: {e}", exc_info=True)
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.post("/ask/agentic", response_model=AnswerResponse, tags=["RAG"])
+async def ask_question_agentic(
+    request: Request, 
+    body: QuestionRequest,
+    user_groups: List[str] = Depends(get_current_user_groups)
+):
+    """
+    Submit a natural language question. Retrieves context iteratively using ReAct
+    loop and function-calling. Supports JWT access control.
+    """
+    logger.info(f"Received agentic question: '{body.question}' for user_groups: {user_groups}")
+    
+    agent = request.app.state.agentic_rag
+    result = agent.ask(body.question, user_groups=user_groups)
+    
     citations = []
     for src in result.get("sources", []):
         citations.append(
@@ -189,37 +463,19 @@ async def list_documents(request: Request):
 @router.delete("/documents/{filename}", tags=["Documents"])
 async def delete_document(request: Request, filename: str):
     """
-    Delete a document's chunks from ChromaDB and remove its source PDF file from disk.
+    Delete a document's parent documents and child chunks from storage,
+    and remove its source PDF file from disk.
     """
     settings = get_settings()
-    chroma_service = request.app.state.chroma_service
+    retriever_service = request.app.state.retriever_service
     
     logger.warning(f"Request to delete document '{filename}' from system.")
     
     try:
-        # 1. Fetch all elements in the collection to match IDs
-        collection_data = chroma_service.vector_store.get()
-        ids = collection_data.get("ids", [])
-        metadatas = collection_data.get("metadatas", [])
+        # 1. Clean up vectors and parent mappings
+        retriever_service.delete_document_by_source(filename)
         
-        ids_to_delete = []
-        for doc_id, meta in zip(ids, metadatas):
-            if meta:
-                meta_source = Path(meta.get("source", "")).name
-                if meta_source == filename:
-                    ids_to_delete.append(doc_id)
-                    
-        if not ids_to_delete:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Document '{filename}' not found in database."
-            )
-            
-        # 2. Delete from ChromaDB
-        chroma_service.vector_store.delete(ids_to_delete)
-        logger.info(f"Deleted {len(ids_to_delete)} vector chunks for {filename}")
-        
-        # 3. Delete file from upload directory if it exists
+        # 2. Delete file from upload directory if it exists
         filepath = settings.upload_path / filename
         if filepath.exists():
             os.remove(filepath)

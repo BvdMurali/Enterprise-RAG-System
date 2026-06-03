@@ -7,6 +7,18 @@ from typing import List, Optional
 from pydantic import BaseModel, Field
 
 
+class ChatMessage(BaseModel):
+    """Schema for a single chat message in the conversation history."""
+    role: str = Field(..., description="Role of the sender: 'user' or 'assistant'.")
+    content: str = Field(..., description="The text content of the message.")
+    sources: Optional[List[dict]] = Field(None, description="Optional list of source chunks if role is assistant.")
+    intent: Optional[str] = Field(None, description="The classified query intent type.")
+    confidence: Optional[float] = Field(None, description="Confidence score percentage as a float.")
+    summary: Optional[str] = Field(None, description="A 1-sentence quick summary of the answer.")
+    document_type: Optional[str] = Field(None, description="The classified category of the source documents.")
+    followups: Optional[List[str]] = Field(None, description="Suggested follow-up questions.")
+
+
 class QuestionRequest(BaseModel):
     """Schema for incoming natural language questions."""
     question: str = Field(
@@ -16,6 +28,10 @@ class QuestionRequest(BaseModel):
     filter_document: Optional[str] = Field(
         None, 
         description="Optional filename to restrict the search to a single document."
+    )
+    chat_history: Optional[List[ChatMessage]] = Field(
+        None,
+        description="Optional past conversation turns for query rewriting and memory."
     )
 
 
@@ -28,12 +44,20 @@ class SourceCitation(BaseModel):
 
 
 class AnswerResponse(BaseModel):
-    """Schema for the LLM response including grounded answer and source citations."""
-    answer: str = Field(..., description="The generated answer from Gemini.")
-    sources: List[SourceCitation] = Field(
+    """Schema for the LLM response conforming to the enterprise RAG response schema."""
+    answer: str = Field(..., description="The main formatted answer markdown text.")
+    summary: str = Field(..., description="A 1-sentence quick summary of the answer.")
+    confidence: float = Field(..., description="Confidence score percentage as a float between 0.0 and 1.0.")
+    citations: List[SourceCitation] = Field(
         default=[], 
-        description="List of source chunks used to generate the answer."
+        description="List of source document citations used to ground the answer."
     )
+    follow_up_questions: List[str] = Field(
+        default=[],
+        description="Suggested follow-up questions for continuing the conversation."
+    )
+    document_type: str = Field(..., description="The classified category of the source documents.")
+    response_type: str = Field(..., description="The classified query intent type.")
 
 
 class UploadResponse(BaseModel):
@@ -48,12 +72,6 @@ class DocumentInfo(BaseModel):
     filename: str = Field(..., description="The name of the PDF file.")
     chunk_count: int = Field(..., description="Number of chunks associated with this file.")
 
-
-class ChatMessage(BaseModel):
-    """Schema for a single chat message in the conversation history."""
-    role: str = Field(..., description="Role of the sender: 'user' or 'assistant'.")
-    content: str = Field(..., description="The text content of the message.")
-    sources: Optional[List[dict]] = Field(None, description="Optional list of source chunks if role is assistant.")
 
 
 class ConversationState(BaseModel):

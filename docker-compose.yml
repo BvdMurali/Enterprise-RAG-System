@@ -12,11 +12,14 @@ services:
     volumes:
       - chroma_data:/app/chroma_db
       - pdf_data:/app/data
+      - parent_data:/app/parent_store
     env_file:
       - .env
     environment:
       - CHROMA_PERSIST_DIR=/app/chroma_db
       - UPLOAD_DIR=/app/data
+      - PARENT_STORE_DIR=/app/parent_store
+      - SEMANTIC_CACHE_DB=/app/data/semantic_cache.db
       - BACKEND_HOST=0.0.0.0
       - BACKEND_PORT=8000
     healthcheck:
@@ -52,3 +55,5 @@ volumes:
     name: enterprise_rag_chroma_data
   pdf_data:
     name: enterprise_rag_pdf_data
+  parent_data:
+    name: enterprise_rag_parent_data

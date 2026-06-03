@@ -78,8 +78,8 @@ def test_api_upload_flow(app_settings, mock_pdf_load, mock_gemini):
         assert response.status_code == 200
         ans_data = response.json()
         assert "testing framework" in ans_data["answer"]
-        assert len(ans_data["sources"]) > 0
-        assert ans_data["sources"][0]["source"] == "testing.pdf"
+        assert len(ans_data["citations"]) > 0
+        assert ans_data["citations"][0]["source"] == "testing.pdf"
 
         # 4. Delete document
         response = client.delete("/api/documents/testing.pdf")

@@ -62,11 +62,26 @@ async def lifespan(app: FastAPI):
             
         app.state.llm_service = llm_service
 
-        # 6. Initialize full RAG Pipeline
+        # 6. Initialize Semantic Cache
+        logger.info("Initializing Semantic Cache Service...")
+        from backend.services.semantic_cache import SemanticCacheService
+        app.state.semantic_cache = SemanticCacheService(
+            embeddings=embedding_service.embeddings,
+            db_path=settings.semantic_cache_db,
+            threshold=settings.semantic_cache_threshold
+        )
+
+        # 7. Initialize full RAG Pipeline
         logger.info("Orchestrating RAG Pipeline...")
-        # Even if llm_service is None, we instantiate it so routes won't break on import/boot,
-        # but ask() will raise/return appropriate errors at runtime.
         app.state.rag_pipeline = RAGPipelineService(
+            retriever_service=retriever_service,
+            llm_service=llm_service
+        )
+
+        # 8. Initialize Agentic RAG Service
+        logger.info("Initializing Agentic RAG Service...")
+        from backend.services.agentic_rag import AgenticRAGService
+        app.state.agentic_rag = AgenticRAGService(
             retriever_service=retriever_service,
             llm_service=llm_service
         )

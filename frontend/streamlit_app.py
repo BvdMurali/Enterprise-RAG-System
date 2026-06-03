@@ -5,6 +5,8 @@ management, chat interaction, and source citation inspection.
 """
 
 import sys
+import json
+import re
 from pathlib import Path
 import streamlit as st
 import httpx
@@ -19,6 +21,25 @@ backend_host = settings.backend_host
 if backend_host == "0.0.0.0":
     backend_host = "127.0.0.1"
 BACKEND_URL = f"http://{backend_host}:{settings.backend_port}"
+
+# Intent → friendly label and icon mapping
+INTENT_META = {
+    "definition":  ("📘", "Definition"),
+    "summarize":   ("📝", "Summary"),
+    "compare":     ("🔄", "Comparison"),
+    "list":        ("📋", "List"),
+    "count":       ("🔢", "Count"),
+    "extract":     ("📊", "Extraction"),
+    "explain":     ("💡", "Explanation"),
+    "summary":     ("📋", "Profile Summary"),
+    "skills":      ("🛠️", "Skills Overview"),
+    "projects":    ("🚀", "Projects & Experience"),
+    "education":   ("🎓", "Education"),
+    "contact":     ("📇", "Contact Details"),
+    "comparison":  ("⚖️", "Comparison"),
+    "qa":          ("💡", "Direct Answer"),
+    "general":     ("💬", "General"),
+}
 
 # Configure page settings
 st.set_page_config(
@@ -114,39 +135,186 @@ st.markdown(
         transform: translateY(-2px);
     }
     
-    /* Custom citation elements */
-    .citation-badge {
+    /* Intent badge */
+    .intent-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(99, 102, 241, 0.12);
+        color: #A5B4FC;
+        border: 1px solid rgba(99, 102, 241, 0.25);
+        border-radius: 20px;
+        padding: 3px 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        margin-bottom: 0.6rem;
+    }
+    
+    /* Confidence pill */
+    .conf-high {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(16, 185, 129, 0.12);
+        color: #34D399;
+        border: 1px solid rgba(16, 185, 129, 0.25);
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        margin-left: 8px;
+    }
+    .conf-medium {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(245, 158, 11, 0.12);
+        color: #FCD34D;
+        border: 1px solid rgba(245, 158, 11, 0.25);
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        margin-left: 8px;
+    }
+    .conf-low {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(239, 68, 68, 0.12);
+        color: #F87171;
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        border-radius: 20px;
+        padding: 3px 10px;
+        font-size: 0.73rem;
+        font-weight: 600;
+        margin-left: 8px;
+    }
+    
+    /* Inline citation chips */
+    .citation-chip {
+        display: inline-block;
+        background: rgba(56, 189, 248, 0.1);
+        color: #7DD3FC;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 5px;
+        padding: 1px 6px;
+        font-size: 0.72rem;
+        font-weight: 500;
+        vertical-align: middle;
+        margin: 0 2px;
+        cursor: default;
+    }
+
+    /* Document category badge */
+    .doc-type-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(56, 189, 248, 0.12);
+        color: #7DD3FC;
+        border: 1px solid rgba(56, 189, 248, 0.25);
+        border-radius: 20px;
+        padding: 3px 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+        margin-bottom: 0.6rem;
+        margin-left: 8px;
+    }
+    
+    /* Answer summary container */
+    .summary-container {
+        background: rgba(255, 255, 255, 0.03);
+        border-left: 3px solid #818CF8;
+        padding: 0.6rem 1rem;
+        margin-bottom: 1rem;
+        font-style: italic;
+        font-size: 0.92rem;
+        color: #CBD5E1;
+        border-radius: 4px;
+    }
+
+    /* Follow-up suggestion chips */
+    .followup-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 0.9rem;
+    }
+    .followup-label {
+        color: #64748B;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+    }
+    
+    /* Source card inside expander */
+    .source-card {
+        background: rgba(15, 23, 42, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-left: 3px solid #6366F1;
+        border-radius: 0 10px 10px 0;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.6rem;
+    }
+    .source-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 0.4rem;
+    }
+    .source-badge {
         display: inline-block;
         background: rgba(99, 102, 241, 0.15);
         color: #C7D2FE;
         border: 1px solid rgba(99, 102, 241, 0.3);
         border-radius: 6px;
         padding: 2px 8px;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         font-weight: 500;
-        margin-bottom: 0.5rem;
-        margin-right: 0.5rem;
     }
-    .score-badge {
+    .source-score-high {
         display: inline-block;
         background: rgba(16, 185, 129, 0.15);
         color: #A7F3D0;
         border: 1px solid rgba(16, 185, 129, 0.3);
         border-radius: 6px;
         padding: 2px 8px;
-        font-size: 0.78rem;
+        font-size: 0.75rem;
         font-weight: 500;
-        margin-bottom: 0.5rem;
     }
-    
-    .source-block {
-        border-left: 3px solid #6366F1;
-        padding-left: 1rem;
-        margin-top: 0.5rem;
-        background: rgba(255, 255, 255, 0.02);
-        border-radius: 0 8px 8px 0;
-        padding-top: 0.5rem;
-        padding-bottom: 0.5rem;
+    .source-score-med {
+        display: inline-block;
+        background: rgba(245, 158, 11, 0.15);
+        color: #FDE68A;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .source-score-low {
+        display: inline-block;
+        background: rgba(239, 68, 68, 0.1);
+        color: #FCA5A5;
+        border: 1px solid rgba(239, 68, 68, 0.25);
+        border-radius: 6px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    .source-text {
+        color: #CBD5E1;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        margin: 0;
+        border-top: 1px solid rgba(255,255,255,0.04);
+        padding-top: 0.4rem;
+        margin-top: 0.4rem;
     }
     
     /* Clean sidebar adjustments */
@@ -281,7 +449,10 @@ st.markdown(
 )
 
 
-# Helper functions to query the backend API
+# ---------------------------------------------------------------------------
+# Helper functions — backend API calls
+# ---------------------------------------------------------------------------
+
 def check_backend_health() -> bool:
     try:
         with httpx.Client(timeout=3.0) as client:
@@ -316,16 +487,6 @@ def delete_document(filename: str) -> dict:
         return r.json()
 
 
-def ask_rag_pipeline(question: str, filter_doc: str = None) -> dict:
-    with httpx.Client(timeout=60.0) as client:
-        payload = {"question": question}
-        if filter_doc:
-            payload["filter_document"] = filter_doc
-        r = client.post(f"{BACKEND_URL}/api/ask", json=payload)
-        r.raise_for_status()
-        return r.json()
-
-
 def fetch_conversations() -> dict:
     try:
         with httpx.Client(timeout=3.0) as client:
@@ -336,9 +497,9 @@ def fetch_conversations() -> dict:
         pass
     return {}
 
+
 def sync_conversations():
     try:
-        # If we are in an archived conversation, ensure its dictionary entry is kept up to date
         if st.session_state.get("current_chat_title") != "Active Conversation":
             st.session_state.past_conversations[st.session_state.current_chat_title] = list(st.session_state.chat_history)
             
@@ -353,7 +514,126 @@ def sync_conversations():
         pass
 
 
-# Initialize state
+# ---------------------------------------------------------------------------
+# Rendering helpers
+# ---------------------------------------------------------------------------
+
+def _confidence_pill(confidence) -> str:
+    """Return an HTML confidence pill for the given level or float score."""
+    try:
+        val = float(confidence)
+        pct = int(val * 100)
+        if val >= 0.85:
+            return f'<span class="conf-high">✓ {pct}% Confidence</span>'
+        elif val >= 0.50:
+            return f'<span class="conf-medium">◑ {pct}% Confidence</span>'
+        else:
+            return f'<span class="conf-low">⚠ {pct}% Confidence</span>'
+    except (ValueError, TypeError):
+        conf_str = str(confidence)
+        if conf_str == "High":
+            return f'<span class="conf-high">✓ High Confidence</span>'
+        elif conf_str == "Low":
+            return f'<span class="conf-low">⚠ Low Confidence</span>'
+        else:
+            return f'<span class="conf-medium">◑ Medium Confidence</span>'
+
+
+def _score_badge(score_pct: int) -> str:
+    """Return a colour-coded score badge."""
+    if score_pct >= 70:
+        cls = "source-score-high"
+    elif score_pct >= 40:
+        cls = "source-score-med"
+    else:
+        cls = "source-score-low"
+    return f'<span class="{cls}">▲ {score_pct}% match</span>'
+
+
+def render_sources_expander(sources: list):
+    """Render the source accordion with rich source cards."""
+    if not sources:
+        return
+    # Only show sources with a non-trivial relevance score
+    meaningful = [s for s in sources if s.get("relevance_score", 0) > 0.01]
+    if not meaningful:
+        return
+
+    label = f"📚 {len(meaningful)} Source{'s' if len(meaningful) != 1 else ''} Used"
+    with st.expander(label, expanded=False):
+        for src in meaningful:
+            score_pct = min(int(src.get("relevance_score", 0) * 100), 99)
+            fname = Path(src.get("source", "Unknown")).name
+            page = src.get("page", "?")
+            content = src.get("content", "").strip()
+
+            st.markdown(
+                f"""
+                <div class="source-card">
+                    <div class="source-header">
+                        <span class="source-badge">📄 {fname}</span>
+                        <span class="source-badge">Page {page}</span>
+                        {_score_badge(score_pct)}
+                    </div>
+                    <p class="source-text">{content[:350]}{"…" if len(content) > 350 else ""}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def render_followups(followups: list):
+    """Render clickable follow-up suggestion chips using st.button."""
+    if not followups:
+        return
+    st.markdown('<div class="followup-label">💡 Suggested follow-ups</div>', unsafe_allow_html=True)
+    cols = st.columns(len(followups))
+    for i, q in enumerate(followups):
+        with cols[i]:
+            if st.button(q, key=f"followup_{id(q)}_{i}", use_container_width=True):
+                st.session_state.pending_query = q
+                st.rerun()
+
+
+def render_assistant_message(message: dict):
+    """Render a fully structured assistant message from chat history."""
+    intent = message.get("intent", "general")
+    confidence = message.get("confidence", 0.85)
+    followups = message.get("followups", [])
+    summary = message.get("summary", "")
+    doc_type = message.get("document_type", "")
+
+    icon, label = INTENT_META.get(intent, ("💬", "Answer"))
+
+    # Intent badge + document type badge + confidence pill header
+    badges_html = f'<div style="margin-bottom:0.5rem;"><span class="intent-badge">{icon} {label}</span>'
+    if doc_type and doc_type.strip().lower() != "unknown":
+        badges_html += f'<span class="doc-type-badge">📂 {doc_type}</span>'
+    badges_html += f'{_confidence_pill(confidence)}</div>'
+
+    st.markdown(badges_html, unsafe_allow_html=True)
+
+    # 1-Sentence Quick Summary Box
+    if summary and summary.strip():
+        st.markdown(
+            f'<div class="summary-container"><strong>Summary:</strong> {summary.strip()}</div>',
+            unsafe_allow_html=True
+        )
+
+    # Main answer (supports markdown)
+    st.markdown(message["content"])
+
+    # Sources accordion
+    render_sources_expander(message.get("sources", []))
+
+    # Follow-up chips
+    render_followups(followups)
+
+
+# ---------------------------------------------------------------------------
+# Initialize session state
+# ---------------------------------------------------------------------------
+
 if "chat_history" not in st.session_state:
     state = fetch_conversations()
     st.session_state.chat_history = state.get("chat_history", [])
@@ -361,7 +641,10 @@ if "chat_history" not in st.session_state:
     st.session_state.current_chat_title = state.get("current_chat_title", "Active Conversation")
 
 
-# HEADER
+# ---------------------------------------------------------------------------
+# PAGE HEADER
+# ---------------------------------------------------------------------------
+
 st.markdown('<div class="hero-title">Enterprise RAG Engine</div>', unsafe_allow_html=True)
 st.markdown(
     f"""
@@ -382,7 +665,10 @@ if not backend_online:
     st.stop()
 
 
-# SIDEBAR: DOCUMENT HUB & CONTROLS
+# ---------------------------------------------------------------------------
+# SIDEBAR
+# ---------------------------------------------------------------------------
+
 with st.sidebar:
     st.markdown('<div class="sidebar-section-header">💬 Conversation Hub</div>', unsafe_allow_html=True)
     
@@ -391,10 +677,8 @@ with st.sidebar:
         if st.button("➕ New Chat", use_container_width=True, type="primary"):
             if st.session_state.chat_history:
                 if st.session_state.current_chat_title == "Active Conversation":
-                    # Deduce conversation name based on first user query
                     first_query = next((msg["content"] for msg in st.session_state.chat_history if msg["role"] == "user"), "Conversation")
                     title = first_query[:22] + "..." if len(first_query) > 22 else first_query
-                    # Ensure name uniqueness
                     base_title = title
                     counter = 1
                     while title in st.session_state.past_conversations:
@@ -402,7 +686,6 @@ with st.sidebar:
                         counter += 1
                     st.session_state.past_conversations[title] = list(st.session_state.chat_history)
                 else:
-                    # Update the currently loaded past conversation before clearing
                     st.session_state.past_conversations[st.session_state.current_chat_title] = list(st.session_state.chat_history)
                 
             st.session_state.chat_history = []
@@ -423,11 +706,7 @@ with st.sidebar:
         for key in list(st.session_state.past_conversations.keys()):
             col_t, col_d = st.columns([5, 1])
             with col_t:
-                # Highlight if current loaded chat matches
-                btn_label = f"💬 {key}"
-                # Render button
-                if st.button(btn_label, key=f"conv_{key}", use_container_width=True):
-                    # Save current active conversation if it has history before loading
+                if st.button(f"💬 {key}", key=f"conv_{key}", use_container_width=True):
                     if st.session_state.chat_history:
                         if st.session_state.current_chat_title == "Active Conversation":
                             first_q = next((m["content"] for m in st.session_state.chat_history if m["role"] == "user"), "Conversation")
@@ -441,7 +720,6 @@ with st.sidebar:
                         else:
                             st.session_state.past_conversations[st.session_state.current_chat_title] = list(st.session_state.chat_history)
                         
-                    # Load selected conversation
                     st.session_state.chat_history = list(st.session_state.past_conversations[key])
                     st.session_state.current_chat_title = key
                     sync_conversations()
@@ -481,14 +759,11 @@ with st.sidebar:
     if not docs:
         st.info("No documents uploaded yet.")
     else:
-        # Create a document dropdown filter for search
         doc_options = ["All Documents"] + [d["filename"] for d in docs]
         selected_filter = st.selectbox("Search Scope Filter", options=doc_options)
         
-        # Space layout
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         
-        # Display document list with delete buttons
         for d in docs:
             col1, col2 = st.columns([5, 1])
             with col1:
@@ -502,7 +777,6 @@ with st.sidebar:
                     unsafe_allow_html=True
                 )
             with col2:
-                # Add a vertical spacer to center alignment
                 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
                 if st.button("🗑️", key=f"del_{d['filename']}", help=f"Delete {d['filename']}"):
                     try:
@@ -543,10 +817,13 @@ with st.sidebar:
     )
 
 
-# MAIN AREA: CHAT INTERFACE
+# ---------------------------------------------------------------------------
+# MAIN CHAT AREA
+# ---------------------------------------------------------------------------
+
 st.markdown("### 💬 Chat Terminal")
 
-# Display conversation logs
+# Display conversation history
 for idx, message in enumerate(st.session_state.chat_history):
     with st.chat_message(message["role"]):
         if message["role"] == "user":
@@ -573,85 +850,131 @@ for idx, message in enumerate(st.session_state.chat_history):
                         st.session_state[f"editing_{idx}"] = True
                         st.rerun()
         else:
-            st.markdown(message["content"])
-            
-            # If there are sources associated with the AI response, display them in an expander
-            if message.get("sources"):
-                with st.expander("🔍 View Retrieved Sources"):
-                    for src in message["sources"]:
-                        score_pct = int(src['relevance_score'] * 100)
-                        st.markdown(
-                            f"""
-                            <div class="glass-card" style="padding: 0.8rem; margin-bottom: 0.6rem;">
-                                <span class="citation-badge">📄 {src['source']}</span>
-                                <span class="citation-badge">Page {src['page']}</span>
-                                <span class="score-badge">Match Score: {score_pct}%</span>
-                                <div class="source-block">
-                                    <p style="font-size: 0.9rem; margin: 0; color: #E2E8F0; line-height: 1.4;">
-                                        {src['content']}
-                                    </p>
-                                </div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
+            # Rich assistant message rendering
+            render_assistant_message(message)
 
-# Accept user inputs
+
+# ---------------------------------------------------------------------------
+# Handle new query
+# ---------------------------------------------------------------------------
+
 user_input = st.chat_input("Ask a question about your uploaded documents...")
 pending_query = st.session_state.pop("pending_query", None)
-
 user_query = pending_query if pending_query else user_input
 
 if user_query:
-    # Add question to display
+    # Add question to display and history
     st.session_state.chat_history.append({"role": "user", "content": user_query})
     with st.chat_message("user"):
         st.markdown(user_query)
 
-    # Generate model response
     with st.chat_message("assistant"):
-        with st.spinner("Retrieving document chunks & generating answer..."):
+        filter_doc_name = None
+        if 'selected_filter' in locals() and selected_filter != "All Documents":
+            filter_doc_name = selected_filter
+
+        # Shared mutable state bag — avoids 'nonlocal' issues inside a nested generator
+        _state = {
+            "sources": [],
+            "followups": [],
+            "confidence": 0.85,
+            "intent": "general",
+            "summary": "",
+            "document_type": "",
+        }
+
+        # Placeholders in the correct layout order:
+        badges_placeholder = st.empty()
+        summary_placeholder = st.empty()
+        # The main answer goes to response_placeholder which is written by write_stream
+        response_placeholder = st.empty()
+
+        def stream_generator():
+            """Collect SSE stream and yield text tokens; populate _state side-channel."""
+            formatted_history = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in st.session_state.chat_history[:-1]
+            ]
+            payload = {
+                "question": user_query,
+                "chat_history": formatted_history,
+            }
+            if filter_doc_name:
+                payload["filter_document"] = filter_doc_name
+
             try:
-                # Apply filter if not "All Documents"
-                filter_doc_name = None
-                if 'selected_filter' in locals() and selected_filter != "All Documents":
-                    filter_doc_name = selected_filter
-                
-                result = ask_rag_pipeline(user_query, filter_doc_name)
-                
-                st.markdown(result["answer"])
-                
-                # Add response to history
-                st.session_state.chat_history.append({
-                    "role": "assistant",
-                    "content": result["answer"],
-                    "sources": result.get("sources", [])
-                })
-                sync_conversations()
-                
-                # Render sources
-                if result.get("sources"):
-                    with st.expander("🔍 View Retrieved Sources"):
-                        for src in result["sources"]:
-                            score_pct = int(src['relevance_score'] * 100)
-                            st.markdown(
-                                f"""
-                                <div class="glass-card" style="padding: 0.8rem; margin-bottom: 0.6rem;">
-                                    <span class="citation-badge">📄 {src['source']}</span>
-                                    <span class="citation-badge">Page {src['page']}</span>
-                                    <span class="score-badge">Match Score: {score_pct}%</span>
-                                    <div class="source-block">
-                                        <p style="font-size: 0.9rem; margin: 0; color: #E2E8F0; line-height: 1.4;">
-                                            {src['content']}
-                                        </p>
-                                    </div>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
-                            
+                with httpx.stream("POST", f"{BACKEND_URL}/api/ask/stream", json=payload, timeout=90.0) as r:
+                    r.raise_for_status()
+                    for line in r.iter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data = json.loads(line[6:])
+                        if "metadata" in data:
+                            _state["intent"] = data["metadata"].get("intent", "general")
+                        elif "sources" in data:
+                            _state["sources"].extend(data["sources"])
+                        elif "token" in data:
+                            yield data["token"]
+                        elif "parsed" in data:
+                            _state["confidence"] = data["parsed"].get("confidence", 0.85)
+                            _state["followups"] = data["parsed"].get("followups", [])
+                            _state["summary"] = data["parsed"].get("summary", "")
+                            _state["document_type"] = data["parsed"].get("document_type", "Unknown")
+                        elif "error" in data:
+                            yield f"\n[Error: {data['error']}]"
             except Exception as e:
-                err_msg = f"An error occurred: {e}"
-                st.error(err_msg)
-                st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
-                sync_conversations()
+                yield f"\n[Connection Error: {str(e)}]"
+
+        try:
+            full_response = response_placeholder.write_stream(stream_generator())
+
+            # --- Strip the structural tags from the displayed text ---
+            clean_response = full_response
+            answer_match = re.search(r"\[ANSWER\]\s*(.*?)(?=\n\[|\Z)", full_response, re.DOTALL | re.IGNORECASE)
+            if answer_match:
+                clean_response = answer_match.group(1).strip()
+            
+            # Re-render response in its placeholder cleanly
+            response_placeholder.markdown(clean_response)
+
+            # --- Render badges (intent + document type) + confidence pill ---
+            icon, label = INTENT_META.get(_state["intent"], ("💬", "Answer"))
+            badges_html = f'<div style="margin-bottom:0.5rem;"><span class="intent-badge">{icon} {label}</span>'
+            doc_type = _state["document_type"]
+            if doc_type and doc_type.strip().lower() != "unknown":
+                badges_html += f'<span class="doc-type-badge">📂 {doc_type}</span>'
+            badges_html += f'{_confidence_pill(_state["confidence"])}</div>'
+            badges_placeholder.markdown(badges_html, unsafe_allow_html=True)
+
+            # --- Render summary if present ---
+            summary = _state["summary"]
+            if summary and summary.strip():
+                summary_placeholder.markdown(
+                    f'<div class="summary-container"><strong>Summary:</strong> {summary.strip()}</div>',
+                    unsafe_allow_html=True
+                )
+
+            # --- Sources accordion ---
+            render_sources_expander(_state["sources"])
+
+            # --- Follow-up suggestions ---
+            render_followups(_state["followups"])
+
+            # Save to history
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": clean_response,
+                "sources": _state["sources"],
+                "followups": _state["followups"],
+                "confidence": _state["confidence"],
+                "intent": _state["intent"],
+                "summary": _state["summary"],
+                "document_type": _state["document_type"],
+            })
+            sync_conversations()
+
+        except Exception as e:
+            err_msg = f"An error occurred: {e}"
+            st.error(err_msg)
+            st.session_state.chat_history.append({"role": "assistant", "content": err_msg})
+            sync_conversations()
