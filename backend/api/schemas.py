@@ -17,6 +17,10 @@ class ChatMessage(BaseModel):
     summary: Optional[str] = Field(None, description="A 1-sentence quick summary of the answer.")
     document_type: Optional[str] = Field(None, description="The classified category of the source documents.")
     followups: Optional[List[str]] = Field(None, description="Suggested follow-up questions.")
+    key_insights: Optional[List[str]] = Field(None, description="Bullet list of key insights.")
+    confidence_reasons: Optional[List[str]] = Field(None, description="Bullet list of reasons for confidence.")
+    chunks_retrieved: Optional[int] = Field(None, description="Total chunks retrieved.")
+    chunks_used: Optional[int] = Field(None, description="Total chunks used/cited.")
 
 
 class QuestionRequest(BaseModel):
@@ -58,6 +62,22 @@ class AnswerResponse(BaseModel):
     )
     document_type: str = Field(..., description="The classified category of the source documents.")
     response_type: str = Field(..., description="The classified query intent type.")
+    key_insights: List[str] = Field(
+        default=[], 
+        description="Bullet list of key insights extracted from the answer."
+    )
+    confidence_reasons: List[str] = Field(
+        default=[], 
+        description="Bullet list of reasons for the confidence level."
+    )
+    chunks_retrieved: int = Field(
+        default=0, 
+        description="Total number of chunks retrieved from search."
+    )
+    chunks_used: int = Field(
+        default=0, 
+        description="Number of unique source documents/chunks actually cited."
+    )
 
 
 class UploadResponse(BaseModel):

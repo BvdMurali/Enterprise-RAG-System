@@ -264,6 +264,7 @@ class RetrieverService:
                 score_threshold=self.settings.retrieval_score_threshold
             )
             for doc, score in results:
+                doc.metadata["dense_score"] = float(score)
                 doc.metadata["relevance_score"] = float(score)
                 dense_results.append(doc)
 
@@ -323,9 +324,12 @@ class RetrieverService:
                 parent_doc_list = self.parent_store.mget([parent_id])
                 if parent_doc_list and parent_doc_list[0]:
                     parent_doc = parent_doc_list[0]
-                    # Preserve child's page/relevance metadata
+                    # Preserve child's page/relevance/dense metadata and matching child text
                     parent_doc.metadata["page"] = child.metadata.get("page", 0)
                     parent_doc.metadata["relevance_score"] = child.metadata.get("relevance_score", 0.0)
+                    parent_doc.metadata["dense_score"] = child.metadata.get("dense_score", 0.0)
+                    parent_doc.metadata["matched_child_text"] = child.page_content
+                    parent_doc.metadata["source"] = child.metadata.get("source", "Unknown")
                     parent_documents.append(parent_doc)
                 else:
                     parent_documents.append(child)

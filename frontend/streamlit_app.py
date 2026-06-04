@@ -7,6 +7,7 @@ management, chat interaction, and source citation inspection.
 import sys
 import json
 import re
+import textwrap
 from pathlib import Path
 import streamlit as st
 import httpx
@@ -518,25 +519,115 @@ def sync_conversations():
 # Rendering helpers
 # ---------------------------------------------------------------------------
 
+def get_friendly_header(sources: list, default_doc_type: str = "") -> str:
+    """Generate a clean, professional, and friendly document title from source filenames."""
+    if not sources:
+        if default_doc_type and default_doc_type.lower() != "unknown":
+            clean_type = default_doc_type.replace("_", " ").replace("-", " ").title()
+            return f"📄 {clean_type} Assistant"
+        return "💬 Intelligent Assistant"
+    
+    filenames = []
+    for s in sources:
+        src_name = s.get("source") or s.get("filename")
+        if src_name:
+            name = Path(src_name).name
+            if name not in filenames:
+                filenames.append(name)
+                
+    if not filenames:
+        return "💬 Intelligent Assistant"
+        
+    clean_names = []
+    for fname in filenames:
+        name_without_ext = re.sub(r"\.pdf$", "", fname, flags=re.IGNORECASE)
+        clean_name = name_without_ext.replace("_", " ").replace("-", " ")
+        clean_name = " ".join(clean_name.split()).title()
+        if len(clean_name) > 40:
+            clean_name = clean_name[:37] + "..."
+        clean_names.append(clean_name)
+        
+    if len(clean_names) <= 2:
+        return ", ".join([f"📄 {n}" for n in clean_names])
+    else:
+        return f"📄 Multiple Documents ({len(clean_names)})"
+
+
+def highlight_matched_text(content: str, matched_text: str) -> str:
+    """Robustly highlight matched child text within parent content with case-insensitive support."""
+    if not matched_text or not matched_text.strip():
+        return content
+        
+    clean_matched = matched_text.strip()
+    
+    # Try exact substring match
+    idx = content.lower().find(clean_matched.lower())
+    if idx != -1:
+        start = idx
+        end = idx + len(clean_matched)
+        return (
+            content[:start] +
+            '<mark style="background-color: rgba(245, 158, 11, 0.35); color: #ffffff; padding: 2px 4px; border-radius: 4px;">' +
+            content[start:end] +
+            '</mark>' +
+            content[end:]
+        )
+        
+    # Try flexible whitespace match
+    try:
+        words = [re.escape(w) for w in clean_matched.split()]
+        if words:
+            pattern = r"\s+".join(words)
+            match = re.search(pattern, content, re.IGNORECASE)
+            if match:
+                start, end = match.start(), match.end()
+                return (
+                    content[:start] +
+                    '<mark style="background-color: rgba(245, 158, 11, 0.35); color: #ffffff; padding: 2px 4px; border-radius: 4px;">' +
+                    content[start:end] +
+                    '</mark>' +
+                    content[end:]
+                )
+    except Exception:
+        pass
+        
+    # Try partial phrase matches
+    phrases = [p.strip() for p in re.split(r'[,;\.\!\?]', clean_matched) if len(p.strip()) > 15]
+    for phrase in phrases:
+        idx = content.lower().find(phrase.lower())
+        if idx != -1:
+            start = idx
+            end = idx + len(phrase)
+            content = (
+                content[:start] +
+                '<mark style="background-color: rgba(245, 158, 11, 0.35); color: #ffffff; padding: 2px 4px; border-radius: 4px;">' +
+                content[start:end] +
+                '</mark>' +
+                content[end:]
+            )
+            
+    return content
+
+
 def _confidence_pill(confidence) -> str:
     """Return an HTML confidence pill for the given level or float score."""
     try:
         val = float(confidence)
         pct = int(val * 100)
         if val >= 0.85:
-            return f'<span class="conf-high">✓ {pct}% Confidence</span>'
+            return f'<span class="conf-high">✓ High ({pct}%)</span>'
         elif val >= 0.50:
-            return f'<span class="conf-medium">◑ {pct}% Confidence</span>'
+            return f'<span class="conf-medium">◑ Medium ({pct}%)</span>'
         else:
-            return f'<span class="conf-low">⚠ {pct}% Confidence</span>'
+            return f'<span class="conf-low">⚠ Low ({pct}%)</span>'
     except (ValueError, TypeError):
         conf_str = str(confidence)
         if conf_str == "High":
-            return f'<span class="conf-high">✓ High Confidence</span>'
+            return f'<span class="conf-high">✓ High</span>'
         elif conf_str == "Low":
-            return f'<span class="conf-low">⚠ Low Confidence</span>'
+            return f'<span class="conf-low">⚠ Low</span>'
         else:
-            return f'<span class="conf-medium">◑ Medium Confidence</span>'
+            return f'<span class="conf-medium">◑ Medium</span>'
 
 
 def _score_badge(score_pct: int) -> str:
@@ -550,11 +641,82 @@ def _score_badge(score_pct: int) -> str:
     return f'<span class="{cls}">▲ {score_pct}% match</span>'
 
 
+def render_confidence_card(confidence: float, reasons: list, placeholder=None):
+    """Render a premium card showing the calculated confidence score and backing reasons list."""
+    try:
+        val = float(confidence)
+        pct = int(val * 100)
+    except (ValueError, TypeError):
+        val = 0.85
+        pct = 85
+        
+    if val >= 0.85:
+        level = "High"
+        cls = "conf-high"
+        color = "#34D399"
+        icon = "✓"
+    elif val >= 0.50:
+        level = "Medium"
+        cls = "conf-medium"
+        color = "#FCD34D"
+        icon = "◑"
+    else:
+        level = "Low"
+        cls = "conf-low"
+        color = "#F87171"
+        icon = "⚠"
+        
+    reasons_html = ""
+    if reasons:
+        reasons_list_html = "".join([f'<li style="margin-bottom: 2px;">{r}</li>' for r in reasons])
+        reasons_html = textwrap.dedent(f"""
+            <div style="margin-top: 6px; font-size: 0.82rem; color: #94A3B8;">
+                <ul style="margin: 0; padding-left: 16px; list-style-type: disc;">
+                    {reasons_list_html}
+                </ul>
+            </div>
+        """).strip()
+        
+    html = textwrap.dedent(f"""
+        <div class="glass-card" style="padding: 12px 16px; margin-bottom: 15px; border-left: 4px solid {color}; background: rgba(30, 41, 59, 0.25); box-shadow: 0 4px 15px rgba(0,0,0,0.15);">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <span style="font-weight: 600; font-size: 0.88rem; color: #E2E8F0; letter-spacing: 0.02em;">CONFIDENCE ASSESSMENT</span>
+                <span class="{cls}" style="margin-left: 0px; font-size: 0.78rem;">{icon} {level} ({pct}%)</span>
+            </div>
+            {reasons_html}
+        </div>
+    """).strip()
+    if placeholder:
+        placeholder.markdown(html, unsafe_allow_html=True)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
+def render_key_insights(key_insights: list, placeholder=None):
+    """Render a dedicated indigo callout container for summary key insights."""
+    if not key_insights:
+        return
+    insights_list_html = "".join([f'<li style="margin-bottom: 4px;">{ins}</li>' for ins in key_insights])
+    html = textwrap.dedent(f"""
+        <div class="glass-card" style="background: rgba(99, 102, 241, 0.06); border-left: 4px solid #818CF8; border-radius: 12px; padding: 14px 18px; margin: 15px 0; box-shadow: 0 4px 20px rgba(99, 102, 241, 0.1);">
+            <div style="font-weight: 600; font-size: 0.92rem; color: #A5B4FC; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+                <span>💡</span> KEY INSIGHTS
+            </div>
+            <ul style="margin: 0; padding-left: 18px; color: #E2E8F0; font-size: 0.88rem; line-height: 1.5; list-style-type: square;">
+                {insights_list_html}
+            </ul>
+        </div>
+    """).strip()
+    if placeholder:
+        placeholder.markdown(html, unsafe_allow_html=True)
+    else:
+        st.markdown(html, unsafe_allow_html=True)
+
+
 def render_sources_expander(sources: list):
-    """Render the source accordion with rich source cards."""
+    """Render the source accordion with rich source cards highlighting matching text."""
     if not sources:
         return
-    # Only show sources with a non-trivial relevance score
     meaningful = [s for s in sources if s.get("relevance_score", 0) > 0.01]
     if not meaningful:
         return
@@ -566,20 +728,26 @@ def render_sources_expander(sources: list):
             fname = Path(src.get("source", "Unknown")).name
             page = src.get("page", "?")
             content = src.get("content", "").strip()
+            matched_text = src.get("matched_child_text", "").strip()
 
-            st.markdown(
-                f"""
+            highlighted_content = highlight_matched_text(content, matched_text)
+            
+            if matched_text and len(highlighted_content) > len(content):
+                display_text = highlighted_content
+            else:
+                display_text = content[:350] + ("…" if len(content) > 350 else "")
+
+            html = textwrap.dedent(f"""
                 <div class="source-card">
                     <div class="source-header">
                         <span class="source-badge">📄 {fname}</span>
                         <span class="source-badge">Page {page}</span>
                         {_score_badge(score_pct)}
                     </div>
-                    <p class="source-text">{content[:350]}{"…" if len(content) > 350 else ""}</p>
+                    <p class="source-text">{display_text}</p>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            """).strip()
+            st.markdown(html, unsafe_allow_html=True)
 
 
 def render_followups(followups: list):
@@ -597,37 +765,63 @@ def render_followups(followups: list):
 
 def render_assistant_message(message: dict):
     """Render a fully structured assistant message from chat history."""
-    intent = message.get("intent", "general")
+    sources = message.get("sources", [])
+    doc_type = message.get("document_type", "")
     confidence = message.get("confidence", 0.85)
+    reasons = message.get("confidence_reasons", [])
+    key_insights = message.get("key_insights", [])
     followups = message.get("followups", [])
     summary = message.get("summary", "")
-    doc_type = message.get("document_type", "")
+    chunks_retrieved = message.get("chunks_retrieved", len(sources))
+    chunks_used = message.get("chunks_used", 0)
 
-    icon, label = INTENT_META.get(intent, ("💬", "Answer"))
+    # 1. Friendly document header
+    friendly_title = get_friendly_header(sources, doc_type)
+    st.markdown(
+        f"""
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.5rem;">
+            <span style="font-weight: 600; font-size: 1.1rem; color: #F1F5F9; display: flex; align-items: center; gap: 6px;">
+                {friendly_title}
+            </span>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # Intent badge + document type badge + confidence pill header
-    badges_html = f'<div style="margin-bottom:0.5rem;"><span class="intent-badge">{icon} {label}</span>'
-    if doc_type and doc_type.strip().lower() != "unknown":
-        badges_html += f'<span class="doc-type-badge">📂 {doc_type}</span>'
-    badges_html += f'{_confidence_pill(confidence)}</div>'
+    # 2. Confidence Card
+    render_confidence_card(confidence, reasons)
 
-    st.markdown(badges_html, unsafe_allow_html=True)
-
-    # 1-Sentence Quick Summary Box
+    # 3. 1-Sentence Quick Summary Box
     if summary and summary.strip():
         st.markdown(
             f'<div class="summary-container"><strong>Summary:</strong> {summary.strip()}</div>',
             unsafe_allow_html=True
         )
 
-    # Main answer (supports markdown)
+    # 4. Main answer (supports markdown)
     st.markdown(message["content"])
 
-    # Sources accordion
-    render_sources_expander(message.get("sources", []))
+    # 5. Key Insights callout container
+    if key_insights:
+        render_key_insights(key_insights)
 
-    # Follow-up chips
+    # 6. Retrieval Transparency line
+    if chunks_retrieved > 0:
+        st.markdown(
+            f"""
+            <div style="font-size: 0.78rem; color: #64748B; margin-top: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                <span>🔍</span> <strong>Retrieval Transparency:</strong> Chunks Retrieved: {chunks_retrieved} | Chunks Used: {chunks_used}
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    # 7. Sources accordion
+    render_sources_expander(sources)
+
+    # 8. Follow-up chips
     render_followups(followups)
+
 
 
 # ---------------------------------------------------------------------------
@@ -875,19 +1069,26 @@ if user_query:
 
         # Shared mutable state bag — avoids 'nonlocal' issues inside a nested generator
         _state = {
+            "answer": "",
             "sources": [],
             "followups": [],
             "confidence": 0.85,
             "intent": "general",
             "summary": "",
             "document_type": "",
+            "confidence_reasons": [],
+            "key_insights": [],
+            "chunks_retrieved": 0,
+            "chunks_used": 0,
         }
 
         # Placeholders in the correct layout order:
-        badges_placeholder = st.empty()
+        header_placeholder = st.empty()
+        confidence_placeholder = st.empty()
         summary_placeholder = st.empty()
-        # The main answer goes to response_placeholder which is written by write_stream
         response_placeholder = st.empty()
+        insights_placeholder = st.empty()
+        transparency_placeholder = st.empty()
 
         def stream_generator():
             """Collect SSE stream and yield text tokens; populate _state side-channel."""
@@ -916,10 +1117,15 @@ if user_query:
                         elif "token" in data:
                             yield data["token"]
                         elif "parsed" in data:
+                            _state["answer"] = data["parsed"].get("answer", "")
                             _state["confidence"] = data["parsed"].get("confidence", 0.85)
                             _state["followups"] = data["parsed"].get("followups", [])
                             _state["summary"] = data["parsed"].get("summary", "")
                             _state["document_type"] = data["parsed"].get("document_type", "Unknown")
+                            _state["confidence_reasons"] = data["parsed"].get("confidence_reasons", [])
+                            _state["key_insights"] = data["parsed"].get("key_insights", [])
+                            _state["chunks_retrieved"] = data["parsed"].get("chunks_retrieved", 0)
+                            _state["chunks_used"] = data["parsed"].get("chunks_used", 0)
                         elif "error" in data:
                             yield f"\n[Error: {data['error']}]"
             except Exception as e:
@@ -934,23 +1140,51 @@ if user_query:
             if answer_match:
                 clean_response = answer_match.group(1).strip()
             
+            # If the backend returned a cleaned formatting with superscripts and citations, use it!
+            if _state["answer"]:
+                clean_response = _state["answer"]
+            
             # Re-render response in its placeholder cleanly
             response_placeholder.markdown(clean_response)
 
-            # --- Render badges (intent + document type) + confidence pill ---
-            icon, label = INTENT_META.get(_state["intent"], ("💬", "Answer"))
-            badges_html = f'<div style="margin-bottom:0.5rem;"><span class="intent-badge">{icon} {label}</span>'
-            doc_type = _state["document_type"]
-            if doc_type and doc_type.strip().lower() != "unknown":
-                badges_html += f'<span class="doc-type-badge">📂 {doc_type}</span>'
-            badges_html += f'{_confidence_pill(_state["confidence"])}</div>'
-            badges_placeholder.markdown(badges_html, unsafe_allow_html=True)
+            # --- Render Header ---
+            friendly_title = get_friendly_header(_state["sources"], _state["document_type"])
+            header_placeholder.markdown(
+                f"""
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.5rem;">
+                    <span style="font-weight: 600; font-size: 1.1rem; color: #F1F5F9; display: flex; align-items: center; gap: 6px;">
+                        {friendly_title}
+                    </span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
 
-            # --- Render summary if present ---
+            # --- Render Confidence Card ---
+            render_confidence_card(_state["confidence"], _state["confidence_reasons"], placeholder=confidence_placeholder)
+
+            # --- Render Summary ---
             summary = _state["summary"]
             if summary and summary.strip():
                 summary_placeholder.markdown(
                     f'<div class="summary-container"><strong>Summary:</strong> {summary.strip()}</div>',
+                    unsafe_allow_html=True
+                )
+
+            # --- Render Key Insights ---
+            if _state["key_insights"]:
+                render_key_insights(_state["key_insights"], placeholder=insights_placeholder)
+
+            # --- Render Retrieval Transparency ---
+            retrieved = _state["chunks_retrieved"] if _state["chunks_retrieved"] > 0 else len(_state["sources"])
+            used = _state["chunks_used"]
+            if retrieved > 0:
+                transparency_placeholder.markdown(
+                    f"""
+                    <div style="font-size: 0.78rem; color: #64748B; margin-top: 15px; margin-bottom: 6px; display: flex; align-items: center; gap: 5px;">
+                        <span>🔍</span> <strong>Retrieval Transparency:</strong> Chunks Retrieved: {retrieved} | Chunks Used: {used}
+                    </div>
+                    """,
                     unsafe_allow_html=True
                 )
 
@@ -970,6 +1204,10 @@ if user_query:
                 "intent": _state["intent"],
                 "summary": _state["summary"],
                 "document_type": _state["document_type"],
+                "confidence_reasons": _state["confidence_reasons"],
+                "key_insights": _state["key_insights"],
+                "chunks_retrieved": retrieved,
+                "chunks_used": used,
             })
             sync_conversations()
 

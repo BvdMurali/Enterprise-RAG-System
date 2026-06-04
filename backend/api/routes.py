@@ -200,6 +200,10 @@ async def ask_question(
             followups = payload.get("follow_up_questions", [])
             doc_type = payload.get("document_type", "Unknown")
             resp_type = payload.get("response_type", "general")
+            key_insights = payload.get("key_insights", [])
+            confidence_reasons = payload.get("confidence_reasons", [])
+            chunks_retrieved = payload.get("chunks_retrieved", 0)
+            chunks_used = payload.get("chunks_used", 0)
         except Exception:
             answer = cached_resp_text
             summary = answer[:100] + "..." if len(answer) > 100 else answer
@@ -207,6 +211,10 @@ async def ask_question(
             followups = []
             doc_type = "Unknown"
             resp_type = "general"
+            key_insights = []
+            confidence_reasons = []
+            chunks_retrieved = 0
+            chunks_used = 0
 
         citations = [
             SourceCitation(
@@ -223,7 +231,11 @@ async def ask_question(
             citations=citations,
             follow_up_questions=followups,
             document_type=doc_type,
-            response_type=resp_type
+            response_type=resp_type,
+            key_insights=key_insights,
+            confidence_reasons=confidence_reasons,
+            chunks_retrieved=chunks_retrieved,
+            chunks_used=chunks_used
         )
     
     # 2. Construct Metadata Access Control List (ACL) Filter
@@ -261,6 +273,10 @@ async def ask_question(
         "follow_up_questions": result.get("followups", []),
         "document_type": result.get("document_type", "Unknown"),
         "response_type": result.get("response_type", "general"),
+        "key_insights": result.get("key_insights", []),
+        "confidence_reasons": result.get("confidence_reasons", []),
+        "chunks_retrieved": result.get("chunks_retrieved", 0),
+        "chunks_used": result.get("chunks_used", 0),
         "sources": result.get("sources", [])
     }
     cache_service.set(body.question, json.dumps(cache_payload), result.get("sources", []))
@@ -272,7 +288,11 @@ async def ask_question(
         citations=citations,
         follow_up_questions=result.get("followups", []),
         document_type=result.get("document_type", "Unknown"),
-        response_type=result.get("response_type", "general")
+        response_type=result.get("response_type", "general"),
+        key_insights=result.get("key_insights", []),
+        confidence_reasons=result.get("confidence_reasons", []),
+        chunks_retrieved=result.get("chunks_retrieved", 0),
+        chunks_used=result.get("chunks_used", 0)
     )
 
 
@@ -322,6 +342,10 @@ async def ask_question_stream(
                 followups = payload.get("follow_up_questions", [])
                 doc_type = payload.get("document_type", "Unknown")
                 resp_type = payload.get("response_type", "general")
+                key_insights = payload.get("key_insights", [])
+                confidence_reasons = payload.get("confidence_reasons", [])
+                chunks_retrieved = payload.get("chunks_retrieved", 0)
+                chunks_used = payload.get("chunks_used", 0)
             except Exception:
                 answer = cached_resp_text
                 summary = answer[:100] + "..." if len(answer) > 100 else answer
@@ -329,6 +353,10 @@ async def ask_question_stream(
                 followups = []
                 doc_type = "Unknown"
                 resp_type = "general"
+                key_insights = []
+                confidence_reasons = []
+                chunks_retrieved = 0
+                chunks_used = 0
 
             # Yield intent metadata first so UI can adapt immediately
             yield f"data: {json.dumps({'metadata': {'intent': resp_type}})}\n\n"
@@ -339,19 +367,20 @@ async def ask_question_stream(
             await asyncio.sleep(0.01)
 
             # Yield token chunks to simulate streaming UI rendering
-            chunk_size = 5
+            chunk_size = 25
             for i in range(0, len(answer), chunk_size):
                 token_chunk = answer[i:i+chunk_size]
                 yield f"data: {json.dumps({'token': token_chunk})}\n\n"
-                await asyncio.sleep(0.005)
+                await asyncio.sleep(0.001)
 
             # Yield final parsed dict
-            yield f"data: {json.dumps({'parsed': {'summary': summary, 'confidence': confidence, 'document_type': doc_type, 'response_type': resp_type, 'followups': followups, 'sources_text': ''}})}\n\n"
+            yield f"data: {json.dumps({'parsed': {'answer': answer, 'summary': summary, 'confidence': confidence, 'document_type': doc_type, 'response_type': resp_type, 'followups': followups, 'key_insights': key_insights, 'confidence_reasons': confidence_reasons, 'chunks_retrieved': chunks_retrieved, 'chunks_used': chunks_used, 'sources_text': ''}})}\n\n"
             return
 
         # Cache miss - Stream from RAG and collect for caching
         collected_tokens = []
         collected_sources = []
+        collected_parsed = {}
         try:
             async for chunk in pipeline.ask_async_stream(
                 question=body.question,
@@ -365,21 +394,42 @@ async def ask_question_stream(
                     collected_tokens.append(chunk["token"])
                 elif "sources" in chunk:
                     collected_sources = chunk["sources"]
+                elif "parsed" in chunk:
+                    collected_parsed = chunk["parsed"]
                     
             full_answer = "".join(collected_tokens)
             # Cache the response if it concluded successfully
             if full_answer and not full_answer.startswith("\n[Error"):
-                from backend.services.rag_pipeline import parse_structured_response
-                parsed = parse_structured_response(full_answer)
-                cache_payload = {
-                    "answer": parsed["answer"],
-                    "summary": parsed["summary"],
-                    "confidence": parsed["confidence"],
-                    "follow_up_questions": parsed["followups"],
-                    "document_type": parsed["document_type"],
-                    "response_type": parsed["response_type"],
-                    "sources": collected_sources
-                }
+                if collected_parsed:
+                    cache_payload = {
+                        "answer": collected_parsed.get("answer", full_answer),
+                        "summary": collected_parsed.get("summary", ""),
+                        "confidence": collected_parsed.get("confidence", 0.85),
+                        "follow_up_questions": collected_parsed.get("followups", []),
+                        "document_type": collected_parsed.get("document_type", "Unknown"),
+                        "response_type": collected_parsed.get("response_type", "general"),
+                        "key_insights": collected_parsed.get("key_insights", []),
+                        "confidence_reasons": collected_parsed.get("confidence_reasons", []),
+                        "chunks_retrieved": collected_parsed.get("chunks_retrieved", 0),
+                        "chunks_used": collected_parsed.get("chunks_used", 0),
+                        "sources": collected_sources
+                    }
+                else:
+                    from backend.services.rag_pipeline import parse_structured_response
+                    parsed = parse_structured_response(full_answer)
+                    cache_payload = {
+                        "answer": parsed["answer"],
+                        "summary": parsed["summary"],
+                        "confidence": parsed.get("grounding_score", 0.85),
+                        "follow_up_questions": parsed["followups"],
+                        "document_type": parsed["document_type"],
+                        "response_type": parsed["response_type"],
+                        "key_insights": parsed["key_insights"],
+                        "confidence_reasons": parsed["confidence_reasons"],
+                        "chunks_retrieved": len(collected_sources),
+                        "chunks_used": 0,
+                        "sources": collected_sources
+                    }
                 cache_service.set(body.question, json.dumps(cache_payload), collected_sources)
                 
         except Exception as e:
