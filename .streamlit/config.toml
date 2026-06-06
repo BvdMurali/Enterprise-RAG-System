@@ -1,6 +1,10 @@
 [client]
 toolbarMode = "minimal"
 
+[server]
+enableCORS = false
+enableXsrfProtection = false
+
 [theme]
 base = "dark"
 primaryColor = "#818CF8"
@@ -8,3 +12,4 @@ backgroundColor = "#0B0F19"
 secondaryBackgroundColor = "#1E293B"
 textColor = "#F8FAFC"
 font = "sans serif"
+

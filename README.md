@@ -372,6 +372,88 @@ docker-compose logs -f
 
 ---
 
+## 🤗 Hugging Face Spaces Deployment (Docker Space)
+
+You can host this entire platform completely for free on a Hugging Face Space using the Docker SDK, which provides a generous 16 GB of RAM on its free CPU tier.
+
+### Live Deployment Preview
+
+The following screenshot shows the Enterprise RAG Engine successfully deployed and running on Hugging Face Spaces at **[BvdMurali/Enterprise-RAG-System](https://huggingface.co/spaces/BvdMurali/Enterprise-RAG-System)**:
+
+<div align="center">
+  <img src="assets/rag_hf_deployed.png" alt="Enterprise RAG Engine — Live on Hugging Face Spaces" width="900"/>
+</div>
+
+> [!NOTE]
+> The System Status panel confirms `BAAI/bge-small-en-v1.5` is loaded as the active embedding model, `gemini-3.1-flash-lite` is active as the primary LLM Generator, and the LLM API Key status is **Connected** — all via Hugging Face Secrets injection, without any `.env` file on disk.
+
+---
+
+### Step-by-Step Deployment Guide
+
+#### Step 1: Create a new Hugging Face Space
+- Go to [Hugging Face Spaces](https://huggingface.co/spaces) and click **Create new Space**.
+- Set the Space name and select **Docker** as the SDK.
+- Choose **Blank** (or standard template) and set the visibility to **Public** or **Private**.
+- Select the free **CPU basic (16 GB RAM, 2 vCPU)** tier.
+
+#### Step 2: Configure Secrets & Variables
+Navigate to your Space's **Settings** > **Variables and Secrets** and add the following:
+
+| Type | Name | Value | Required |
+| :--- | :--- | :--- | :--- |
+| 🔴 **Secret** | `GOOGLE_API_KEY` | Your Google Gemini API key from [AI Studio](https://aistudio.google.com/apikey) | ✅ Required |
+| 🟡 **Variable** | `LLM_MODEL_NAME` | `gemini-3.1-flash-lite` | Recommended |
+
+> [!IMPORTANT]
+> The `GOOGLE_API_KEY` **must be added as a Secret** (not a plain variable) to keep it hidden from public view. Without it, the backend will start but all chat queries will fail.
+> Set `LLM_MODEL_NAME=gemini-3.1-flash-lite` to use the optimal free-tier model (500 RPD vs. the default 20 RPD limit of `gemini-2.5-flash`).
+
+#### Step 3: Clone the Space Repository and Upload Files
+```bash
+# 1. Clone the blank Space repository
+git clone https://huggingface.co/spaces/BvdMurali/Enterprise-RAG-System
+cd Enterprise-RAG-System
+
+# 2. Copy project files (Windows Command Prompt)
+xcopy /E /I /Y "..\Enterprise RAG System\backend" "backend"
+xcopy /E /I /Y "..\Enterprise RAG System\frontend" "frontend"
+xcopy /E /I /Y "..\Enterprise RAG System\.streamlit" ".streamlit"
+copy "..\Enterprise RAG System\Dockerfile" "." /Y
+copy "..\Enterprise RAG System\requirements.txt" "." /Y
+copy "..\Enterprise RAG System\start.sh" "." /Y
+copy "..\Enterprise RAG System\.dockerignore" "." /Y
+copy "..\Enterprise RAG System\.gitignore" "." /Y
+
+# 3. Commit and push
+git add backend/ frontend/ .streamlit/ Dockerfile requirements.txt start.sh .dockerignore .gitignore
+git commit -m "Deploy Enterprise RAG Platform to Hugging Face Spaces"
+git push origin main
+```
+*When prompted, enter your Hugging Face username and paste your **Write Access Token** as the password (generate one at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)).*
+
+#### Step 4: Monitor the Build
+Once pushed, navigate to the **App** tab of your Space. Hugging Face will automatically build the Docker image and start both services via `start.sh`. The build typically takes **5–8 minutes** on first run while downloading PyTorch model weights.
+
+Your live application will be available at:
+👉 **`https://huggingface.co/spaces/<your-username>/<your-space-name>`**
+
+---
+
+### Key Deployment Notes & Applied Fixes
+
+| Issue | Root Cause | Fix Applied |
+| :--- | :--- | :--- |
+| **Build error: `.env` not found** | `.env` was never committed (by design) but Dockerfile tried to copy it | Removed `COPY .env` from `Dockerfile`; secrets are injected via HF Settings |
+| **403 Forbidden on file upload** | HF embeds Streamlit in an iframe, blocking default XSRF protection | Added `enableCORS=false` and `enableXsrfProtection=false` to `.streamlit/config.toml` |
+| **Upload error persisted after config fix** | `.streamlit/` folder was not copied into Docker image | Added `COPY .streamlit/ /app/.streamlit/` to `Dockerfile` |
+| **`[Connection Error: timed out]`** | LangChain's Gemini client uses gRPC by default, which is blocked in HF containers | Added `transport="rest"` to all `ChatGoogleGenerativeAI` model instantiations |
+
+> [!WARNING]
+> **Data Persistence Warning**: Hugging Face Spaces use ephemeral storage on the free tier. Any PDF files you upload and index in ChromaDB will be wiped when the Space restarts or goes to sleep. For a persistent database, consider hosting on a VM (like Oracle Cloud Free Tier) or storing the index externally.
+
+---
+
 ## 🧪 Testing & Evaluation
 
 ### 1. Run Automated Test Suite

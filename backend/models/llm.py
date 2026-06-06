@@ -26,21 +26,57 @@ class LLMService:
                 "Please get an API key from Google AI Studio and configure it."
             )
 
-        logger.info(f"Initializing ChatGoogleGenerativeAI with model: {settings.llm_model_name}")
+        # Define the priority model rank order based on user criteria (balanced RPM, TPM, RPD)
+        model_rank = [
+            settings.llm_model_name,
+            "gemini-3.1-flash-lite",
+            "gemma-4-31b",
+            "gemma-4-26b",
+            "gemma-2-27b-it",
+            "gemma-2-9b-it",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-1.5-flash"
+        ]
         
-        try:
-            self.llm = ChatGoogleGenerativeAI(
-                model=settings.llm_model_name,
-                google_api_key=api_key,
-                temperature=settings.llm_temperature,
-                max_output_tokens=settings.llm_max_tokens,
-                # Safe defaults for enterprise apps: disable dangerous content safety blocks if necessary,
-                # or rely on defaults. Let's stick to standard parameters.
-            )
-            logger.info("Successfully initialized Gemini LLM model.")
-        except Exception as e:
-            logger.error(f"Failed to initialize Gemini LLM model: {str(e)}")
-            raise
+        # Remove duplicates while preserving priority order
+        seen = set()
+        unique_model_names = []
+        for m in model_rank:
+            if m and m not in seen:
+                seen.add(m)
+                unique_model_names.append(m)
+
+        logger.info(f"Establishing Resilient LLM Gateway with model priority: {unique_model_names}")
+
+        # Instantiate all chat models in the rank order
+        self.models = []
+        for model_name in unique_model_names:
+            try:
+                chat_model = ChatGoogleGenerativeAI(
+                    model=model_name,
+                    google_api_key=api_key,
+                    temperature=settings.llm_temperature,
+                    max_output_tokens=settings.llm_max_tokens,
+                    transport="rest",
+                )
+
+                self.models.append(chat_model)
+            except Exception as e:
+                logger.warning(f"Could not prepare model client for '{model_name}': {e}")
+
+        if not self.models:
+            raise ValueError("Failed to initialize any of the Gemini/Gemma models.")
+
+        # Chain them with LangChain's native with_fallbacks mechanism to handle runtime errors (429s, timeouts, etc.)
+        self.llm = self.models[0]
+        if len(self.models) > 1:
+            self.llm = self.llm.with_fallbacks(self.models[1:])
+            logger.info("Successfully established resilient LLM gateway with native LangChain fallbacks.")
+        else:
+            logger.info("Successfully initialized single LLM model.")
+
+
 
     def get_llm(self) -> ChatGoogleGenerativeAI:
         """

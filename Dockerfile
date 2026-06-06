@@ -38,18 +38,25 @@ COPY --from=builder /build/requirements.txt .
 RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
     && rm -rf /wheels requirements.txt
 
-# Create non-root user for security compliance
-RUN groupadd -g 10001 appgroup && \
-    useradd -u 10000 -g appgroup -m -s /bin/bash appuser
+# Create non-root user for security compliance (UID 1000 matches Hugging Face Spaces user)
+RUN useradd -u 1000 -m -s /bin/bash appuser
 
 # Create upload, parent store, and database directories with correct ownership
 RUN mkdir -p /app/data /app/chroma_db /app/parent_store /app/logs && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appuser /app
 
-# Copy application source code
-COPY --chown=appuser:appgroup backend/ /app/backend/
-COPY --chown=appuser:appgroup frontend/ /app/frontend/
-COPY --chown=appuser:appgroup .env /app/.env
+# Copy application source code, config and scripts
+COPY --chown=appuser:appuser backend/ /app/backend/
+COPY --chown=appuser:appuser frontend/ /app/frontend/
+COPY --chown=appuser:appuser .streamlit/ /app/.streamlit/
+COPY --chown=appuser:appuser start.sh /app/start.sh
+
+
+
+# Make start.sh executable and fix CRLF line endings if built on Windows
+RUN sed -i 's/\r$//' /app/start.sh && \
+    chmod +x /app/start.sh
+
 
 # Switch to non-root user
 USER appuser
@@ -63,11 +70,13 @@ ENV PYTHONUNBUFFERED=1 \
     CHROMA_PERSIST_DIR=/app/chroma_db \
     UPLOAD_DIR=/app/data \
     PARENT_STORE_DIR=/app/parent_store \
-    SEMANTIC_CACHE_DB=/app/data/semantic_cache.db
+    SEMANTIC_CACHE_DB=/app/data/semantic_cache.db \
+    HOME=/home/appuser
 
-# Expose backend (8000) and frontend (8501) ports
-EXPOSE 8000
-EXPOSE 8501
+# Expose the default Hugging Face Spaces port (7860) where Streamlit is running
+EXPOSE 7860
 
-# The actual command is overridden in docker-compose for each service
-CMD ["python", "-m", "backend.main"]
+
+# CMD executes the startup script running both services
+CMD ["/app/start.sh"]
+
