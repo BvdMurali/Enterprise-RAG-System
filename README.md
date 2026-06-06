@@ -1,8 +1,4 @@
-<div align="center">
-  <img src="assets/rag_dashboard.png" alt="Enterprise RAG Dashboard" width="800"/>
-</div>
-
-# 🚀 Enterprise Retrieval-Augmented Generation (RAG) System
+# 🚀 Enterprise Retrieval-Augmented Generation (RAG) Platform
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=flat&logo=fastapi)](https://fastapi.tiangolo.com/)
@@ -11,26 +7,59 @@
 [![LangChain](https://img.shields.io/badge/LangChain-Integration-green)](https://python.langchain.com/)
 [![JWT](https://img.shields.io/badge/JWT-Authentication-black?style=flat&logo=json-web-tokens)](https://jwt.io/)
 
-A production-grade, highly optimized Enterprise RAG System upgraded to deliver state-of-the-art retrieval accuracy, strict response grounding, and ultra-low latency. Engineered specifically for CPU-only corporate environments (optimized for **Intel Core i5-6300U with 8 GB RAM**), the system combines hybrid retrieval, local re-ranking, triple-tier caching, and asynchronous Server-Sent Events (SSE) streaming to provide a premium user experience under a strict **5-second TTFT SLA**.
+A production-grade, highly optimized Enterprise RAG (Retrieval-Augmented Generation) System engineered to deliver state-of-the-art retrieval accuracy, strict response grounding, and ultra-low latency. Specially architected for CPU-only corporate environments (optimized to run seamlessly on restricted infrastructure such as **Intel Core i5-6300U with 8 GB RAM**), the platform integrates hybrid retrieval, local neural re-ranking, triple-tier caching, and asynchronous Server-Sent Events (SSE) streaming to guarantee premium user experience under a strict **5-second Time-To-First-Token (TTFT) SLA**.
 
 ---
 
-## ✨ Key Features & Enhancements
+## 📸 System Interface & Visual Walkthrough
 
-*   **Parent Document Retrieval:** Chunks documents into highly precise sub-chunks (200 tokens) for vector matching, but returns larger parent contexts (1000 tokens) to the LLM to preserve narrative integrity. Persisted durably to disk using LangChain `LocalFileStore`.
-*   **Hybrid Search & Fusion:** Merges semantic dense retrieval (ChromaDB) with BM25 keyword matching using **Reciprocal Rank Fusion (RRF)**.
-*   **Lightweight CPU Re-ranking:** Re-scores candidates on CPU in **~30-50ms** using the lightweight `cross-encoder/ms-marco-MiniLM-L-6-v2` model (~80MB footprint).
-*   **Lost-in-the-Middle Mitigation:** Dynamically sorts context chunks placing the highest scoring elements at the prompt's margins (beginning and end) where LLM attention is strongest.
-*   **Response Grounding & Structured Citations:** Structured XML tags isolate document context. The LLM generates strict citations, outputting a clear answer structure with verified sources and confidence metrics.
-*   **Triple Caching Layer:** Bypasses LLM generation and retrieval for repeated questions using a local **SQLite Semantic Cache** (triggers under a distance threshold of `< 0.08` to return immediate results in **~8ms**).
-*   **Asynchronous SSE Streaming:** Streams generated tokens in real-time to Streamlit using FastAPI Server-Sent Events, achieving a perceived Time-To-First-Token (TTFT) of **< 200ms**.
-*   **JWT-Based Auth & Access Control:** Standalone bearer token generation and metadata filtering enforce Role-Based Access Control (RBAC) and tenant isolation at the vector-search layer.
-*   **Continuous Evaluation Framework:** Custom LLM-as-a-Judge test harness measuring Faithfulness and Answer Relevance using Gemini Flash.
-*   **Agentic Multi-Step RAG:** Features an agentic loop powered by Gemini tool-calling to execute query planning, multi-document analysis, and self-reflection checks.
+The platform features a modern, glassmorphic Streamlit interface designed for corporate analysts and administrators.
+
+### 1. Unified Control Sidebar
+<div align="center">
+  <img src="assets/rag_sidebar.png" alt="Enterprise RAG Sidebar" width="350"/>
+</div>
+
+> [!NOTE]
+> **Sidebar Functionality**:
+> * **Conversation Hub**: Quick options to start a new chat or clear the active terminal session.
+> * **Document Upload**: A secure file dropzone supporting multi-PDF ingestion up to 200MB per file with automatic role-based access group selection.
+> * **Managed Documents**: Displays currently indexed PDFs and their precise child chunk counts, with a single-click trash icon to permanently remove documents from both the vector index and local storage.
+> * **System Status**: Live diagnostics monitor, displaying the active local embedding model, LLM generator endpoint, Gemini API key validation state, and backend API status.
 
 ---
 
-## 🏗️ Advanced RAG Architecture
+### 2. Conversational Terminal & Grounded Answers
+<div align="center">
+  <img src="assets/rag_chat_response.png" alt="Active Chat Terminal" width="800"/>
+</div>
+
+> [!TIP]
+> **Response Interface Details**:
+> * **Query Input**: Accepts natural language questions (e.g., *"How do risk assessments influence information security objectives?"*).
+> * **Confidence Assessment**: Displays a real-time grounding verification pill (e.g., `🟢 High (90%)`) along with high-level validation facts directly extracted from source contexts.
+> * **Executive Summary**: A concise one-sentence abstract of the answer for quick scanning.
+> * **Grounded Explanation**: Detailed response incorporating superscript citations (e.g., `¹`, `²`) mapped exactly to the matching source documents.
+
+---
+
+### 3. Verification Details & Citation Transparency
+<div align="center">
+  <img src="assets/rag_insights_sources.png" alt="Detailed Verification and Key Insights" width="800"/>
+</div>
+
+> [!IMPORTANT]
+> **Verification Details**:
+> * **Key Insights**: A structured card highlighting the primary takeaways of the generated response.
+> * **Retrieval Transparency**: Displays telemetry metrics summarizing the number of raw child chunks retrieved versus the number of parent chunks cited in the response.
+> * **Sources Drawer**: A collapsible drawer presenting the name, page numbers, relevance weights, and raw text of the underlying documents used to construct the answer.
+> * **Suggested Follow-Ups**: Context-aware queries dynamically generated by the LLM based on the active conversation context.
+
+---
+
+## 🏗️ Production-Grade System Architecture
+
+The following diagram illustrates the lifecycle of an user query as it navigates the system's security, caching, routing, hybrid search, neural re-ranking, and streaming generation layers:
 
 ```mermaid
 graph TB
@@ -40,14 +69,14 @@ graph TB
     end
 
     subgraph API [FastAPI Backend Server]
-        Auth["JWT Auth Middleware / Fallback"]
-        Cache["Semantic Cache Check"]
+        Auth["JWT Auth Middleware"]
+        Cache["Semantic Cache Check (SQLite)"]
         Router["Agentic Query Router"]
         
         subgraph Pipeline [Retrieval & Grounding Pipeline]
             BM25["BM25 Sparse Retriever"]
             Chroma["Chroma Dense Vector DB"]
-            RRF["Reciprocal Rank Fusion"]
+            RRF["Reciprocal Rank Fusion (RRF)"]
             Rerank["CPU Cross-Encoder Reranker"]
             Context["Context Manager (Lost-in-Middle)"]
         end
@@ -81,123 +110,263 @@ graph TB
 
 ---
 
-## ⚡ Tech Stack
+## ⚙️ End-to-End Internal Workflows
 
-*   **Core Language:** Python 3.11+ (Fully tested on Python 3.14)
-*   **LLM Orchestrator:** LangChain (LCEL) & LangGraph
-*   **Vector DB:** ChromaDB (with parent document store mappings)
-*   **Local Embedding Model:** `BAAI/bge-small-en-v1.5` (384 dims, 512 context, 134MB RAM footprint)
-*   **Local Re-ranking Model:** `cross-encoder/ms-marco-MiniLM-L-6-v2` (80MB RAM footprint)
-*   **Generative Model:** Google Gemini 2.5 Flash (via API)
-*   **Security:** Standalone Jose-JWT Token Bearer Authentication
-*   **Frontend UI:** Streamlit (with Custom CSS styling for Glassmorphic themes)
-*   **API Layer:** FastAPI (SSE Streaming Response)
+### 1. Document Ingestion & Indexing Pipeline
+The ingestion process utilizes a **Parent-Child Chunking Strategy** to solve the classic RAG dilemma: retrieving short, precise matching sentences while feeding broad context to the LLM.
 
----
+```
+[PDF Upload] ➔ [Text Extraction] ➔ [Parent Splits (~1KB)] ➔ [Child Splits (~200B)] ➔ [BGE Embeddings] ➔ [ChromaDB & File Store]
+```
 
-## 🛠️ Performance & SLA Target
-
-This system is engineered to run in CPU-only enterprise virtual machines. The following latency service level agreements (SLAs) are defined for typical queries:
-
-| SLA Tier | Time-To-First-Token (TTFT) | Status | Description |
-| :--- | :--- | :--- | :--- |
-| **Excellent** | `< 2.0 sec` | 🟢 Target | Optimal user experience. Typical for semantic cache hits or light documents. |
-| **Good** | `2.0 – 5.0 sec` | 🟡 Target | Standard generation performance on CPU re-ranking and Gemini inference. |
-| **Acceptable** | `5.0 – 8.0 sec` | 🟠 Warning | Borderline latency; usually occurs under complex multi-page retrieval. |
-| **Poor** | `> 8.0 sec` | 🔴 Failed | Degraded performance; requires pipeline troubleshooting. |
-
-*Note: The absolute maximum acceptable latency for generation is capped at **5.0 seconds**.*
+1. **API Upload**: The user posts a PDF to `/api/upload` along with an access control tag (e.g., `access_group="finance"`).
+2. **Text Parsing**: `PDFLoaderService` extracts plaintext and page numbers.
+3. **Parent Document Splitting**: The document is split into parent chunks of **1000 tokens** (overlap: **150 tokens**). Each parent is saved in a local key-value store (`LocalFileStore` mapped to `parent_store/`) under a unique `parent_id` UUID.
+4. **Child Chunk Splitting**: Each parent chunk is further sub-divided into child chunks of **200 tokens** (overlap: **30 tokens**).
+5. **Metadata Mapping**: Each child chunk is annotated with metadata:
+   ```json
+   {
+     "parent_id": "uuid-v4-parent-id",
+     "source": "iso27001.pdf",
+     "page": 12,
+     "access_group": "finance"
+   }
+   ```
+6. **Vector Generation**: Child chunks are embedded using the local `BAAI/bge-small-en-v1.5` model (384 dimensions). Weights are loaded sequentially into RAM on CPU without memory-mapped overrides to prevent pagefile crashes.
+7. **Storage Persistence**: Generated embeddings and metadata are stored in the `ChromaDB` collection. The local BM25 cache is invalidated to trigger a refit on the next query.
 
 ---
 
-## 🔒 Standalone Security & Access Control (RBAC)
+### 2. Dual-Retrieval & Re-ranking Workflow
+To ensure high recall and precision, the retrieval layer executes a hybrid dense-sparse search, merges the candidates, and filters documents at the metadata level to enforce Role-Based Access Control (RBAC).
 
-The system enforces strict document-level Role-Based Access Control (RBAC) without external OIDC dependencies:
-1.  **JWT Verification Service (`/api/auth/login`)**: Standalone authentication validates users against a hashed credentials registry and signs a JWT containing the user's role groups.
-2.  **Access Group Scopes**: PDF uploads can be associated with specific access scopes (e.g., `hr`, `finance`, `public`) via `/api/upload?access_group=finance`.
-3.  **Vector Store ACL Matching**: Active user scopes from the JWT are automatically parsed. The dense and sparse retrieval engines apply vector-metadata filtering (`$in` logical operators) to ensure users can only retrieve chunks they are authorized to view.
-4.  **Graceful Fallback**: If no authentication token is provided (such as in legacy integrations), traffic gracefully defaults to a `"public"` access group.
+```
+                 ┌── [ChromaDB Dense Search] ──┐
+[User Query] ➔ ──┤                             ├──> [RRF Fusion] ➔ [Cross-Encoder Rerank] ➔ [Parent Context Fetch]
+                 └── [BM25 Lexical Search] ────┘
+```
+
+1. **Access Filtering**: Active user roles are extracted from the incoming JWT token. A filter query is constructed:
+   `{"access_group": {"$in": user_groups}}` (e.g. `{"access_group": {"$in": ["finance", "public"]}}`).
+2. **Dense Vector Search**: ChromaDB performs a Cosine Similarity search on the embedding of the query, returning the top 15 child chunks matching the ACL filter.
+3. **Sparse Lexical Search**: The custom BM25 index executes a keyword search on the query to find 15 matching child chunks. The server then filters these results to match the user's ACL.
+4. **Reciprocal Rank Fusion (RRF)**: The dense and sparse results are merged to compute a unified rank score for each unique chunk:
+   $$RRF\_Score(d) = \sum_{m \in \{dense, sparse\}} \frac{1}{\text{Rank}_m(d) + 60}$$
+   The top 10 fused candidates are sent to the re-ranking layer.
+5. **CPU-Optimized Neural Re-ranking**: The query and the fused text candidates (prepended with their document names for context matching) are passed to the `cross-encoder/ms-marco-MiniLM-L-6-v2` re-ranking model. The model computes a logit score representing the passage's relevance to the question.
+6. **Parent Context Mapping**: The system takes the top $K$ (configured via `RETRIEVAL_TOP_K`) re-ranked child chunks. For each child, it queries `LocalFileStore` to fetch the full 1000-token parent chunk. This resolves chunk boundary fragmentation.
+7. **Lost-in-the-Middle Layout**: The parent chunks are distributed such that the highest-scoring documents are placed at the beginning and the end of the prompt context, while lower-scoring documents are placed in the middle. This mitigates the LLM's tendency to ignore information in the middle of long prompts.
 
 ---
 
-## ⚙️ CPU & Memory Optimizations (OS Error 1455 Bypass)
+### 3. Generation, Grounding & Citation Processing
 
-On local machines or corporate VMs with restricted paging files, loading large PyTorch models (like HuggingFace embeddings or SentenceTransformer Cross-Encoders) can crash with `OSError: [WinError 1455] The paging file is too small for this operation to complete`.
+```
+[Context Prompt] ➔ [Query Rewrite] ➔ [Gemini Inference] ➔ [Structured Parsing] ➔ [Citations Formatter] ➔ [Confidence Calculation]
+```
 
-This occurs because PyTorch's default model loader uses `safetensors.safe_open` with memory-mapped files (`mmap`), requesting large virtual memory allocations that exceed local system limits.
+1. **Query Rewriting**: If chat history is present, the pipeline rewrites the query into a standalone search query.
+2. **Intent-Aware Prompting**: The system maps the query to one of eight intents (e.g., *definition, summary, comparison*) and injects custom prompt constraints to align the LLM's generation style.
+3. **Inference with Structured XML**: The prompt and context (wrapped inside `<Document ID=X Source=Y Page=Z>...</Document>` XML tags) are sent to Gemini. The LLM is instructed to output the answer alongside specific metadata tags.
+4. **Structured Tag Parsing**: The server extracts response content from the LLM's raw output tags:
+   - `[ANSWER]`: The main response text.
+   - `[SUMMARY]`: A short summary sentence.
+   - `[CONFIDENCE_GROUNDING_SCORE]`: The LLM's self-assessed grounding percentage (e.g., `90%`).
+   - `[KEY_INSIGHTS]`: Primary bullet points.
+   - `[FOLLOWUPS]`: Relevant follow-up questions.
+5. **Superscript Citations Formatting**: The citations formatter searches the answer text for brackets (e.g., `[Doc X, Page Y]`), matches them to the retrieved document array, converts them to superscript numbers (e.g., `¹`, `²`), and compiles a clean, numbered bibliography list at the bottom.
+6. **Formulaic Confidence Score Calculation**: A mathematical formula computes the final confidence score by combining vector retrieval, neural re-ranking, LLM grounding self-evaluation, and citation density:
+   $$\text{Confidence} = \frac{S_{\text{retrieval}} + S_{\text{reranker}} + S_{\text{citations}} + S_{\text{grounding}}}{4}$$
+   *Where $S_{\text{reranker}}$ is sigmoid-scaled, and $S_{\text{citations}}$ is calculated as $\min(\text{citations} / 3.0, 1.0)$.*
+7. **Semantic Cache Ingestion**: The query embedding, structured response, and cited sources are saved in `semantic_cache.db` for future reuse.
+
+---
+
+### 4. Client-Server Communication (FastAPI SSE Streaming)
+To achieve an immediate perceived response time, the system streams tokens in real-time.
+
+```
+Client (Streamlit)              FastAPI Backend                SQLite Semantic Cache            Gemini API
+      │                               │                                │                            │
+      │ ── POST /api/ask/stream ────> │                                │                            │
+      │                               │ ── Check cache similarity ───> │                            │
+      │                               │ <── [HIT] Return cached data ──│                            │
+      │ <── Stream Cached Chunks ──── │                                                             │
+      │                               │ ─── [MISS] Fetch Context ────────────────────────────────> │
+      │                               │ <────────────────────────────────── Stream Raw Tokens ───── │
+      │ <── Stream Token Chunks ───── │                                                             │
+      │ <── Stream Parsed Metadata ── │                                                             │
+```
+
+1. **Client Request**: The Streamlit frontend sends a `POST` request containing the question, chat history, and active document filters to `/api/ask/stream`.
+2. **Authorization**: The request header contains the JWT token, which the FastAPI server validates to extract the user's role groups.
+3. **Semantic Cache Lookup**: The backend checks `semantic_cache.db`. If a query embedding has a cosine distance of `< 0.08` to the current question, the server streams the cached response from memory in **~8ms**.
+4. **Server-Sent Events (SSE) Stream**: On a cache miss, the server yields events sequentially:
+   - `data: {"metadata": {"intent": "general"}}` - Streamlit adapts UI elements.
+   - `data: {"sources": [...]}` - Streamlit renders sources.
+   - `data: {"token": "..."}` - Streamlit displays text chunk-by-chunk in real time.
+   - `data: {"parsed": {...}}` - Sends parsed insights, confidence reasons, follow-ups, and calculated scores.
+5. **State Serialization**: After streaming completes, Streamlit calls `/api/conversations` to save the updated chat session to disk.
+
+---
+
+## 📂 Repository Structure
+
+The active components of the workspace are organized as follows (obsolete screenshots, test databases, and virtual environments are ignored/removed):
+
+```
+enterprise-rag-system/
+├── assets/                     # Media assets and screenshots
+│   ├── rag_sidebar.png         # Sidebar controls & system status UI
+│   ├── rag_chat_response.png   # Active chat terminal & grounded answer UI
+│   └── rag_insights_sources.png# Key insights, sources & follow-ups UI
+├── backend/                    # FastAPI Backend Application
+│   ├── api/                    # API Routing and Schemas
+│   │   ├── routes.py           # REST & Server-Sent Events (SSE) endpoints
+│   │   └── schemas.py          # Pydantic request/response data models
+│   ├── loaders/                # Document Parsing Modules
+│   │   └── pdf_loader.py       # PDF reader and page metadata extractor
+│   ├── models/                 # AI Model Integrations
+│   │   └── llm.py              # Gemini client connector & API setup
+│   ├── prompts/                # Prompt Templates
+│   │   └── rag_prompt.py       # Heuristic intent prompt library
+│   ├── services/               # Core Pipeline Services
+│   │   ├── agentic_rag.py      # ReAct agent loop with self-reflection
+│   │   ├── auth.py             # JWT token sign/verify & user registry
+│   │   ├── embeddings.py       # Local BGE embeddings loader (sequential memory load)
+│   │   ├── memory.py           # In-memory chat history manager
+│   │   ├── rag_pipeline.py     # Main RAG workflow orchestrator
+│   │   ├── retriever.py        # Hybrid retriever (BM25 + Chroma + RRF + Cross-Encoder)
+│   │   └── semantic_cache.py   # Local SQLite semantic cache service
+│   ├── vectorstore/            # Vector Database Connectors
+│   │   └── chroma_store.py     # ChromaDB collection client wrapper
+│   ├── config.py               # Pydantic base settings manager
+│   ├── logger.py               # Central logger configuration
+│   └── main.py                 # FastAPI application initializer & lifespan loader
+├── frontend/                   # Streamlit Frontend Web App
+│   └── streamlit_app.py        # Glassmorphic user interface & SSE listener
+├── tests/                      # Pytest Suite & Quality Evaluations
+│   ├── conftest.py             # Global fixtures (mocks & test databases)
+│   ├── evaluate_rag.py         # LLM-as-a-Judge RAG evaluation pipeline
+│   ├── test_api.py             # Route assertions & security check tests
+│   ├── test_chunking.py        # Text splitting unit tests
+│   ├── test_citations.py       # Footnotes formatting unit tests
+│   ├── test_pdf_loader.py      # PDF text extractor tests
+│   └── test_retriever.py       # Retrieval and RRF integration tests
+├── .dockerignore               # Docker build exclude rules
+├── .gitignore                  # Git untracked pattern registry
+├── Dockerfile                  # Multi-stage container definition
+├── docker-compose.yml          # Container orchestration profile
+├── requirements.txt            # Python dependencies manifest
+└── README.md                   # Platform documentation (This file)
+```
+
+---
+
+## 💻 Tech Stack & Dependencies
+
+* **Language**: Python 3.11+
+* **Framework**: LangChain (LCEL) & LangGraph
+* **Vector Store**: ChromaDB (with metadata grouping and parent document mappings)
+* **Local Embedding**: `BAAI/bge-small-en-v1.5` (384 dimensions, 512 context limit, 134MB footprint)
+* **Local Re-ranking**: `cross-encoder/ms-marco-MiniLM-L-6-v2` (80MB footprint)
+* **Generative Service**: Google Gemini API (supporting `gemini-2.5-flash` and `gemini-3.1-flash-lite`)
+* **API Framework**: FastAPI (Uvicorn HTTP server with Server-Sent Events)
+* **Security & Auth**: Jose-JWT (Standalone JWT token parser and validator)
+* **UI Interface**: Streamlit (styled with custom CSS overrides for glassmorphism)
+
+---
+
+## ⚡ CPU & Memory Tuning (OS Error 1455 Bypass)
+
+Corporate servers and standard VMs with restricted paging files often crash when loading large PyTorch models (such as HuggingFace embedding weights or SentenceTransformer Cross-Encoders) with the error:
+`OSError: [WinError 1455] The paging file is too small for this operation to complete`.
+
+This error occurs because PyTorch's default loader utilizes memory-mapped file operations (`mmap` via `safetensors.safe_open`) to map model parameters directly into virtual memory address space. In systems with restricted page files, this allocation requests virtual address space that exceeds the OS configuration, even if there is enough physical RAM.
 
 ### How we solved it:
-*   **Embeddings Loading**: Configured with `use_safetensors=False` inside the underlying HuggingFace transformer arguments to bypass memory mapping and force standard sequential reads into RAM.
-*   **Reranker Loading**: Configured with custom `automodel_args={"use_safetensors": False}` inside the `CrossEncoder` constructor to ensure the re-ranking weights load sequentially without allocating excessive virtual memory space.
+To bypass this issue, we configured the models to use standard sequential file reads instead of virtual memory mapping, loading weights directly into physical RAM:
+
+1. **Local Embeddings Loading** ([embeddings.py](file:///c:/Users/Bvdmu/Enterprise%20RAG%20System/backend/services/embeddings.py)):
+   We configured the underlying HuggingFace transformer arguments with `use_safetensors=False` to bypass memory mapping and force standard sequential reads into RAM.
+2. **Reranker Loading** ([retriever.py](file:///c:/Users/Bvdmu/Enterprise%20RAG%20System/backend/services/retriever.py)):
+   We configured the `CrossEncoder` constructor with `automodel_args={"use_safetensors": False}` to load weights sequentially without allocating excessive virtual memory space:
+   ```python
+   self.reranker = CrossEncoder(
+       self.settings.reranker_model_name, 
+       device="cpu",
+       automodel_args={"use_safetensors": False}
+   )
+   ```
 
 ---
 
 ## 🚀 Getting Started
 
 ### 📋 Prerequisites
-*   Python 3.11+
-*   A Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
+* Python 3.11+
+* A Google Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
-### 🔧 Local Setup
+### 🔧 Local Installation & Setup
 
-1.  **Clone & Navigate to the Repository:**
-    ```bash
-    git clone https://github.com/yourusername/enterprise-rag.git
-    cd "enterprise-rag"
-    ```
+1. **Clone & Navigate to the Directory**:
+   ```bash
+   git clone https://github.com/yourusername/enterprise-rag.git
+   cd "enterprise-rag"
+   ```
 
-2.  **Initialize Virtual Environment:**
-    ```bash
-    python -m venv venv
-    # Windows:
-    .\venv\Scripts\activate
-    # Linux/macOS:
-    source venv/bin/activate
-    ```
+2. **Initialize and Activate Virtual Environment**:
+   ```bash
+   python -m venv venv
+   # Windows:
+   .\venv\Scripts\activate
+   # Linux/macOS:
+   source venv/bin/activate
+   ```
 
-3.  **Install Optimized Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+3. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-4.  **Configure Environment Variables:**
-    Create a `.env` file in the root directory:
-    ```ini
-    GOOGLE_API_KEY=AIzaSyYourGeminiApiKeyHere...
-    EMBEDDING_MODEL_NAME=BAAI/bge-small-en-v1.5
-    RERANKER_MODEL_NAME=cross-encoder/ms-marco-MiniLM-L-6-v2
-    CHROMA_PERSIST_DIR=./chroma_db
-    CHROMA_COLLECTION_NAME=enterprise_rag
-    PARENT_STORE_DIR=./parent_store
-    SEMANTIC_CACHE_DB=./semantic_cache.db
-    SEMANTIC_CACHE_THRESHOLD=0.08
-    JWT_SECRET=your-local-jwt-secret-key
-    JWT_ALGORITHM=HS256
-    ```
+4. **Configure Environment Variables**:
+   Create a `.env` file in the root directory:
+   ```ini
+   GOOGLE_API_KEY=AIzaSyYourGeminiApiKeyHere...
+   EMBEDDING_MODEL_NAME=BAAI/bge-small-en-v1.5
+   RERANKER_MODEL_NAME=cross-encoder/ms-marco-MiniLM-L-6-v2
+   CHROMA_PERSIST_DIR=./chroma_db
+   CHROMA_COLLECTION_NAME=enterprise_rag
+   PARENT_STORE_DIR=./parent_store
+   SEMANTIC_CACHE_DB=./semantic_cache.db
+   SEMANTIC_CACHE_THRESHOLD=0.08
+   JWT_SECRET=your-local-jwt-secret-key
+   JWT_ALGORITHM=HS256
+   ```
 
-5.  **Launch FastAPI Backend Server:**
-    ```bash
-    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-    ```
-    *Interactive Swagger API documentation is available at: [http://localhost:8000/docs](http://localhost:8000/docs)*
+5. **Start FastAPI Backend Server**:
+   ```bash
+   uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+   ```
+   *The interactive API documentation is available at [http://localhost:8000/docs](http://localhost:8000/docs).*
 
-6.  **Launch Streamlit Frontend Web App:**
-    ```bash
-    streamlit run frontend/streamlit_app.py
-    ```
-    *Interact with the Glassmorphism UI at: [http://localhost:8501](http://localhost:8501)*
+6. **Start Streamlit Web App**:
+   ```bash
+   streamlit run frontend/streamlit_app.py
+   ```
+   *The client web application is available at [http://localhost:8501](http://localhost:8501).*
 
 ---
 
 ## 🐳 Container Deployment
 
-Deploy the entire enterprise architecture locally using Docker Compose:
+The system is fully containerized. To deploy the frontend and backend services in detached mode, run:
 
 ```bash
-# Build and run the services in detached mode
+# Build and start services
 docker-compose up --build -d
 
-# View live container streams
+# View live container logs
 docker-compose logs -f
 ```
 
@@ -205,17 +374,49 @@ docker-compose logs -f
 
 ## 🧪 Testing & Evaluation
 
-### Run Unit and Integration Tests
-Execute the test suite to verify retrieval, chunking, and API security assertions:
+### 1. Run Automated Test Suite
+Execute the test suite to verify the API, chunking, and search functionality:
 ```bash
-.\venv\Scripts\pytest
+# Activate virtualenv and run pytest
+pytest
 ```
 
-### Run Custom Quality Evaluations (LLM-as-a-Judge)
+### 2. Run Quality Evaluations (LLM-as-a-Judge)
 Execute the continuous quality evaluation script to measure retrieval-to-generation performance:
 ```bash
-.\venv\Scripts\python.exe tests/evaluate_rag.py
+python tests/evaluate_rag.py
 ```
-This runs a custom evaluation pipeline using Google Gemini to rate generated answers between `0.0` and `1.0` on two main metrics:
-*   **Faithfulness** (Target: `> 0.85`): Verifies if all facts in the generated answer are strictly supported by the context without hallucinations.
-*   **Answer Relevance** (Target: `> 0.80`): Verifies if the answer directly addresses the question.
+This script runs a test harness using Google Gemini to rate generated answers between `0.0` and `1.0` on two main metrics:
+* **Faithfulness** (Target: `> 0.85`): Verifies if all assertions in the generated answer are strictly supported by the context without hallucinating details.
+* **Answer Relevance** (Target: `> 0.80`): Verifies if the answer directly addresses the user's question.
+
+---
+
+## 📋 Performance & SLA Target
+
+Designed specifically for restricted CPU corporate VMs, the platform aims to meet the following latency service level agreements (SLAs):
+
+| SLA Tier | Time-To-First-Token (TTFT) | Status | Description |
+| :--- | :--- | :--- | :--- |
+| **Excellent** | `< 2.0 sec` | 🟢 Target | Cosine distance hit in SQLite Semantic Cache (latency ~8ms) or retrieval over short documents. |
+| **Good** | `2.0 – 5.0 sec` | 🟡 Target | Standard generation performance with hybrid search, CPU cross-encoder re-ranking, and Gemini API inference. |
+| **Acceptable** | `5.0 – 8.0 sec` | 🟠 Warning | Borderline latency; usually occurs during complex multi-page retrieval under high concurrent load. |
+| **Poor** | `> 8.0 sec` | 🔴 Failed | Requires performance diagnostics and database cleanup. |
+
+---
+
+## 🔒 Standalone Security & Access Control (RBAC)
+
+The system enforces document-level Role-Based Access Control (RBAC) without external OIDC dependencies:
+1. **JWT Verification Service (`/api/auth/login`)**: The server signs access tokens containing user role groups (`user_groups`).
+2. **Access Scopes**: PDFs can be tagged with access scopes during upload (e.g. `/api/upload?access_group=hr`).
+3. **Vector Database ACL Filters**: The vector search queries automatically apply metadata filters (`$in` logical operators) to ensure users can only retrieve chunks they are authorized to view.
+4. **Fallback Handling**: Requests without authorization headers default to the `"public"` access group, preventing unauthorized access.
+
+---
+
+## 🗺️ Product Roadmap
+
+* [ ] **Dynamic Document Re-indexing**: Schedule automatic directory syncing to detect additions/deletions in real-time.
+* [ ] **Local LLM Offline Integration**: Add fallback support to run offline generative inference via `Llama.cpp` or `Ollama` for air-gapped secure enterprise servers.
+* [ ] **Visual PDF Highlights**: Implement interactive PDF coordinate mapping to highlight search context directly inside the document viewer on the UI.
