@@ -1110,7 +1110,9 @@ if user_query:
                         if not line.startswith("data: "):
                             continue
                         data = json.loads(line[6:])
-                        if "metadata" in data:
+                        if "keepalive" in data:
+                            continue  # Silent keepalive ping — ignore and keep listening
+                        elif "metadata" in data:
                             _state["intent"] = data["metadata"].get("intent", "general")
                         elif "sources" in data:
                             _state["sources"].extend(data["sources"])

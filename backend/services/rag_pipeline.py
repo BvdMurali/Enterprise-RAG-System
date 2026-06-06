@@ -1,6 +1,7 @@
 import re
 import logging
 import math
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from langchain_core.prompts import ChatPromptTemplate
@@ -587,38 +588,62 @@ class RAGPipelineService:
         filter_dict: Optional[Dict[str, Any]] = None,
     ):
         """
-        Asynchronously streams the RAG response.
+        Asynchronously streams the RAG response with SSE keepalive pings to
+        prevent reverse-proxy timeouts (e.g. Hugging Face Spaces 60s idle timeout)
+        during CPU-intensive retrieval and re-ranking operations.
         """
         logger.info(f"RAG Pipeline streaming invoked for query: '{question}'")
 
         try:
-            # 1. Classify intent
+            # 1. Classify intent immediately (fast, no I/O)
             intent = classify_intent(question)
             logger.info(f"Detected intent (stream): {intent}")
 
-            # 2. Query rewrite
-            search_query = await self.rewrite_query_async(question, chat_history or [])
+            # 2. Emit keepalive + intent metadata IMMEDIATELY before any blocking I/O.
+            #    This resets the HF proxy idle timer right away.
+            yield {"keepalive": True}
+            yield {"metadata": {"intent": intent}}
 
-            # 3. Retrieve
-            retrieved_docs = self.retriever.retrieve(search_query, filter_dict)
+            loop = asyncio.get_event_loop()
+
+            # 3. Query rewrite: schedule it as a proper asyncio Task so we can
+            #    yield keepalives while waiting — no return-in-generator needed.
+            search_query = question
+            rewrite_task = asyncio.ensure_future(
+                self.rewrite_query_async(question, chat_history or [])
+            )
+            while not rewrite_task.done():
+                yield {"keepalive": True}
+                await asyncio.sleep(5)
+            search_query = await rewrite_task
+
+            # 4. Run heavy CPU retrieval (BM25 + CrossEncoder) in a thread with keepalive pings
+            logger.info("Running hybrid retrieval in thread pool with keepalive...")
+            retrieval_task = loop.run_in_executor(
+                None, self.retriever.retrieve, search_query, filter_dict
+            )
+            while not retrieval_task.done():
+                yield {"keepalive": True}
+                await asyncio.sleep(5)
+            retrieved_docs = await retrieval_task
+
             if not retrieved_docs:
                 formatted_context = "No relevant document context was found in the uploaded database."
             else:
-                formatted_context = self.retriever.retrieve_formatted_context(search_query, filter_dict)
+                formatted_context = await loop.run_in_executor(
+                    None, self.retriever.retrieve_formatted_context, search_query, filter_dict
+                )
 
             unique_files = self._get_unique_files()
             files_list_str = ", ".join(unique_files) if unique_files else "None"
             formatted_context += f"\n\n[System Info] Currently indexed PDF documents in database: {files_list_str}"
 
-            # 4. Build prompt
+            # 5. Build prompt
             prompt_template = get_rag_prompt(intent=intent, include_followups=True)
             messages = prompt_template.format_messages(
                 context=formatted_context,
                 question=question
             )
-
-            # 5. Emit intent metadata first so UI can adapt immediately
-            yield {"metadata": {"intent": intent}}
 
             # 6. Emit sources before streaming starts
             sources = []
@@ -642,6 +667,7 @@ class RAGPipelineService:
             streamed_ok = False
             for model_candidate in stream_models:
                 try:
+                    yield {"keepalive": True}
                     async for chunk in model_candidate.astream(messages):
                         full_text += chunk.content
                         yield {"token": chunk.content}
