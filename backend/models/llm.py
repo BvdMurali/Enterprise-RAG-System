@@ -80,9 +80,25 @@ class LLMService:
 
     def get_llm(self) -> ChatGoogleGenerativeAI:
         """
-        Get the initialized LangChain Chat Model interface.
-        
+        Get the resilient LLM gateway (with fallbacks) for standard invocations.
+        Use this for non-streaming calls: /api/ask and /api/ask/agentic.
+
         Returns:
-            The LangChain ChatGoogleGenerativeAI object ready to run chains.
+            The LangChain fallback-chained ChatGoogleGenerativeAI object.
         """
         return self.llm
+
+    def get_primary_llm(self) -> ChatGoogleGenerativeAI:
+        """
+        Get the unwrapped primary model (no fallback chain) for streaming.
+
+        LangChain's with_fallbacks() wrapper does NOT support .astream() — it
+        silently falls back to .ainvoke() and blocks until the full response is
+        ready, causing frontend timeout errors in Hugging Face Spaces.
+        Use this method in ask_async_stream() to get true token-by-token streaming
+        from the primary model. Fallbacks on stream failure are handled manually.
+
+        Returns:
+            The raw ChatGoogleGenerativeAI object for the primary (highest-rank) model.
+        """
+        return self.models[0]

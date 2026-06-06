@@ -632,13 +632,29 @@ class RAGPipelineService:
                 })
             yield {"sources": sources}
 
-            # 7. Stream tokens
-            logger.info("Initiating async stream from Google Gemini...")
+            # 7. Stream tokens — use the unwrapped primary model for true token streaming.
+            # The with_fallbacks() chain silently degrades .astream() to .ainvoke() and blocks
+            # until the full response is ready, causing the frontend to see a single timeout
+            # instead of progressive tokens. Manual fallback handles model errors gracefully.
+            logger.info("Initiating async stream from Google Gemini (primary model)...")
             full_text = ""
-            llm = self.llm_service.get_llm()
-            async for chunk in llm.astream(messages):
-                full_text += chunk.content
-                yield {"token": chunk.content}
+            stream_models = self.llm_service.models  # ordered by priority
+            streamed_ok = False
+            for model_candidate in stream_models:
+                try:
+                    async for chunk in model_candidate.astream(messages):
+                        full_text += chunk.content
+                        yield {"token": chunk.content}
+                    streamed_ok = True
+                    break  # success — stop trying fallback models
+                except Exception as stream_err:
+                    logger.warning(f"Stream failed on model '{model_candidate.model}': {stream_err}. Trying next fallback...")
+                    full_text = ""  # reset accumulated text before retrying
+
+            if not streamed_ok:
+                yield {"error": "All LLM models failed to stream a response. Please retry."}
+                return
+
 
             # 8. Post-stream: parse structured sections and emit them
             parsed = parse_structured_response(full_text)

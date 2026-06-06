@@ -39,11 +39,17 @@ class Settings(BaseSettings):
     google_api_key: str = "your-gemini-api-key-here"
 
     # --- LLM Configuration ---
-    llm_model_name: str = "gemini-2.5-flash"
+    # Override via LLM_MODEL_NAME env var or HF Spaces Variable.
+    # gemini-3.1-flash-lite: 500 RPD free tier — best balance for RAG chatbot workloads.
+    llm_model_name: str = "gemini-3.1-flash-lite"
     llm_temperature: float = 0.3
     llm_max_tokens: int = 2048
 
     # --- Embedding Configuration ---
+    # BAAI/bge-small-en-v1.5 is used in production (HF Spaces).
+    # Override locally via EMBEDDING_MODEL_NAME=all-MiniLM-L6-v2 in your .env if preferred.
+    # WARNING: Do NOT mix embedding models between indexing and querying — ChromaDB stores
+    # vectors at index time and queries must use the same model or results will be incorrect.
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
 
     # --- Chunking Configuration ---
